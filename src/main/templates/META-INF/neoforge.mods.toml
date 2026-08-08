@@ -15,7 +15,7 @@ loaderVersion="${loader_version_range}" #mandatory
 license="${mod_license}"
 
 # A URL to refer people to when problems occur with this mod
-#issueTrackerURL="https://change.me.to.your.issue.tracker.example.invalid/" #optional
+issueTrackerURL="https://github.com/LangQi99/Mekanical-Create/issues"
 
 # A list of mods - how many allowed here is determined by the individual mod loader
 [[mods]] #mandatory
@@ -33,7 +33,7 @@ displayName="${mod_name}" #mandatory
 #updateJSONURL="https://change.me.example.invalid/updates.json" #optional
 
 # A URL for the "homepage" for this mod, displayed in the mod UI
-#displayURL="https://change.me.to.your.mods.homepage.example.invalid/" #optional
+displayURL="https://github.com/LangQi99/Mekanical-Create"
 
 # A file name (in the root of the mod JAR) containing a logo for display
 #logoFile="examplemod.png" #optional
@@ -42,11 +42,12 @@ displayName="${mod_name}" #mandatory
 #credits="" #optional
 
 # The authors of the mod, displayed in the mod UI (optional)
-#authors=""
+authors="LangQi99"
 
 # The description text for the mod (multi line!) (#mandatory)
 description='''
-Example mod description.
+通用动力：在 Mekanism 风格的模拟室中，将 Create 的物理加工流程虚拟化。
+Mekanical Create virtualizes Create processing and sequenced assembly inside a configurable simulation chamber.
 '''
 
 # The [[mixins]] block allows you to declare your mixin config to FML so that it gets loaded.
@@ -87,6 +88,30 @@ Example mod description.
     versionRange="${minecraft_version_range}"
     ordering="NONE"
     side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="create"
+    type="required"
+    reason="Mekanical Create executes Create processing recipes."
+    versionRange="[6.0.10,6.1.0)"
+    ordering="AFTER"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="mekanism"
+    type="required"
+    reason="Mekanical Create is a Mekanism and Create addon."
+    versionRange="[10.7.19,10.8.0)"
+    ordering="AFTER"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="jei"
+    type="optional"
+    reason="JEI displays Simulation Chamber recipes and supports recipe transfer."
+    versionRange="[19.19,20)"
+    ordering="AFTER"
+    side="CLIENT"
 
 # Features are specific properties of the game environment, that you may want to declare you require. This example declares
 # that your mod requires GL version 3.2 or higher. Other features will be added. They are side aware so declaring this won't

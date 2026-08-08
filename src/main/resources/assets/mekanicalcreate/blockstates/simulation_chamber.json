@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "mekanicalcreate:block/simulation_chamber" },
+    "facing=east": { "model": "mekanicalcreate:block/simulation_chamber", "y": 90 },
+    "facing=south": { "model": "mekanicalcreate:block/simulation_chamber", "y": 180 },
+    "facing=west": { "model": "mekanicalcreate:block/simulation_chamber", "y": 270 }
+  }
+}
