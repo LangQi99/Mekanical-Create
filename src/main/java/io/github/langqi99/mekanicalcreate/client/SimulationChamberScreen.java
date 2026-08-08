@@ -35,7 +35,7 @@ abstract class AbstractSimulationChamberScreen<TILE extends SimulationChamberBlo
         super.addGuiElements();
         addRenderableWidget(new GuiVerticalPowerBar(this, tile.getEnergyContainer(), 11, 24))
                 .warning(WarningType.NOT_ENOUGH_ENERGY, tile::isEnergyStarved);
-        addRenderableWidget(new GuiProgress(tile::getScaledProgress, ProgressType.SMALL_RIGHT, this, 125, 51));
+        addRenderableWidget(new GuiProgress(tile::getScaledProgress, ProgressType.SMALL_RIGHT, this, 123, 55));
         addRenderableWidget(new GuiEnergyTab(this, tile.getEnergyContainer(), tile::getActive));
     }
 
