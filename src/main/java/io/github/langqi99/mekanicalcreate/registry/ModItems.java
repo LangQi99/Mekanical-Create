@@ -14,7 +14,10 @@ public final class ModItems {
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> MAIN_TAB = TABS.register("main", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.mekanicalcreate"))
             .icon(() -> ModBlocks.SIMULATION_CHAMBER.asItem().getDefaultInstance())
-            .displayItems((parameters, output) -> output.accept(ModBlocks.SIMULATION_CHAMBER.asItem()))
+            .displayItems((parameters, output) -> {
+                output.accept(ModBlocks.SIMULATION_CHAMBER.asItem());
+                output.accept(ModBlocks.SUPER_SIMULATION_CHAMBER.asItem());
+            })
             .build());
 
     private ModItems() {

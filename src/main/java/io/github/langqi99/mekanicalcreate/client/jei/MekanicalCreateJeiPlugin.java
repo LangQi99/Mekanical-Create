@@ -2,8 +2,10 @@ package io.github.langqi99.mekanicalcreate.client.jei;
 
 import io.github.langqi99.mekanicalcreate.MekanicalCreate;
 import io.github.langqi99.mekanicalcreate.client.SimulationChamberScreen;
+import io.github.langqi99.mekanicalcreate.client.SuperSimulationChamberScreen;
 import io.github.langqi99.mekanicalcreate.content.SimulationRecipeResolver;
 import io.github.langqi99.mekanicalcreate.registry.ModBlocks;
+import io.github.langqi99.mekanicalcreate.registry.ModMenus;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.registration.IGuiHandlerRegistration;
@@ -24,6 +26,10 @@ public final class MekanicalCreateJeiPlugin implements IModPlugin {
 
     private static ItemStack chamberStack() {
         return new ItemStack(ModBlocks.SIMULATION_CHAMBER.get());
+    }
+
+    private static ItemStack superChamberStack() {
+        return new ItemStack(ModBlocks.SUPER_SIMULATION_CHAMBER.get());
     }
 
     @NotNull
@@ -47,21 +53,29 @@ public final class MekanicalCreateJeiPlugin implements IModPlugin {
         }
         registration.addItemStackInfo(chamberStack(),
                 net.minecraft.network.chat.Component.translatable("jei.mekanicalcreate.info"));
+        registration.addItemStackInfo(superChamberStack(),
+                net.minecraft.network.chat.Component.translatable("jei.mekanicalcreate.super_info"));
     }
 
     @Override
     public void registerRecipeCatalysts(IRecipeCatalystRegistration registration) {
         registration.addRecipeCatalyst(chamberStack(), SimulationChamberRecipeCategory.TYPE);
+        registration.addRecipeCatalyst(superChamberStack(), SimulationChamberRecipeCategory.TYPE);
     }
 
     @Override
     public void registerGuiHandlers(IGuiHandlerRegistration registration) {
         registration.addRecipeClickArea(SimulationChamberScreen.class,
-                49, 29, 24, 14, SimulationChamberRecipeCategory.TYPE);
+                124, 32, 28, 14, SimulationChamberRecipeCategory.TYPE);
+        registration.addRecipeClickArea(SuperSimulationChamberScreen.class,
+                124, 32, 28, 14, SimulationChamberRecipeCategory.TYPE);
     }
 
     @Override
     public void registerRecipeTransferHandlers(IRecipeTransferRegistration registration) {
-        registration.addRecipeTransferHandler(new SimulationChamberTransferInfo());
+        registration.addRecipeTransferHandler(new SimulationChamberTransferInfo<>(
+                ModMenus.SIMULATION_CHAMBER.get()));
+        registration.addRecipeTransferHandler(new SimulationChamberTransferInfo<>(
+                ModMenus.SUPER_SIMULATION_CHAMBER.get()));
     }
 }

@@ -13,8 +13,17 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import org.jetbrains.annotations.NotNull;
 
-public final class SimulationChamberScreen extends GuiConfigurableTile<SimulationChamberBlockEntity, MekanismTileContainer<SimulationChamberBlockEntity>> {
-    public SimulationChamberScreen(MekanismTileContainer<SimulationChamberBlockEntity> menu, Inventory inventory, Component title) {
+public final class SimulationChamberScreen extends AbstractSimulationChamberScreen<SimulationChamberBlockEntity> {
+    public SimulationChamberScreen(MekanismTileContainer<SimulationChamberBlockEntity> menu,
+                                   Inventory inventory, Component title) {
+        super(menu, inventory, title);
+    }
+}
+
+abstract class AbstractSimulationChamberScreen<TILE extends SimulationChamberBlockEntity>
+        extends GuiConfigurableTile<TILE, MekanismTileContainer<TILE>> {
+    protected AbstractSimulationChamberScreen(MekanismTileContainer<TILE> menu,
+                                              Inventory inventory, Component title) {
         super(menu, inventory, title);
         imageHeight += 18;
         inventoryLabelY += 18;
@@ -24,9 +33,9 @@ public final class SimulationChamberScreen extends GuiConfigurableTile<Simulatio
     @Override
     protected void addGuiElements() {
         super.addGuiElements();
-        addRenderableWidget(new GuiVerticalPowerBar(this, tile.getEnergyContainer(), 7, 15))
+        addRenderableWidget(new GuiVerticalPowerBar(this, tile.getEnergyContainer(), 7, 8))
                 .warning(WarningType.NOT_ENOUGH_ENERGY, tile::isEnergyStarved);
-        addRenderableWidget(new GuiProgress(tile::getScaledProgress, ProgressType.SMALL_RIGHT, this, 49, 31));
+        addRenderableWidget(new GuiProgress(tile::getScaledProgress, ProgressType.SMALL_RIGHT, this, 124, 35));
         addRenderableWidget(new GuiEnergyTab(this, tile.getEnergyContainer(), tile::getActive));
     }
 

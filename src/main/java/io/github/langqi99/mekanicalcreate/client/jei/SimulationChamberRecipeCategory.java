@@ -6,11 +6,14 @@ import io.github.langqi99.mekanicalcreate.content.SimulationRecipeResolver.Displ
 import io.github.langqi99.mekanicalcreate.content.SimulationRecipeResolver.DisplayRecipe;
 import java.util.Arrays;
 import java.util.List;
+import mekanism.client.gui.element.progress.ProgressType;
+import mekanism.client.gui.element.slot.SlotType;
 import mekanism.common.util.text.TextUtils;
 import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
 import mezz.jei.api.gui.builder.IRecipeSlotBuilder;
 import mezz.jei.api.gui.drawable.IDrawable;
+import mezz.jei.api.gui.drawable.IDrawableAnimated;
 import mezz.jei.api.gui.ingredient.IRecipeSlotsView;
 import mezz.jei.api.helpers.IGuiHelper;
 import mezz.jei.api.recipe.IFocusGroup;
@@ -34,11 +37,27 @@ public final class SimulationChamberRecipeCategory implements IRecipeCategory<Di
     private final IDrawable background;
     private final IDrawable icon;
     private final IDrawable arrow;
+    private final IDrawable arrowFill;
+    private final IDrawable inputSlot;
+    private final IDrawable outputSlot;
+    private final IDrawable catalystSlot;
 
     public SimulationChamberRecipeCategory(IGuiHelper guiHelper, ItemStack chamber) {
         background = guiHelper.createBlankDrawable(WIDTH, HEIGHT);
         icon = guiHelper.createDrawableIngredient(VanillaTypes.ITEM_STACK, chamber);
-        arrow = guiHelper.createAnimatedRecipeArrow(100);
+        arrow = guiHelper.createDrawable(ProgressType.SMALL_RIGHT.getTexture(), 0, 0,
+                ProgressType.SMALL_RIGHT.getWidth(), ProgressType.SMALL_RIGHT.getHeight());
+        arrowFill = guiHelper.createAnimatedDrawable(
+                guiHelper.createDrawable(ProgressType.SMALL_RIGHT.getTexture(), 0,
+                        ProgressType.SMALL_RIGHT.getHeight(), ProgressType.SMALL_RIGHT.getWidth(),
+                        ProgressType.SMALL_RIGHT.getHeight()),
+                100, IDrawableAnimated.StartDirection.LEFT, false);
+        inputSlot = guiHelper.createDrawable(SlotType.INPUT.getTexture(), 0, 0,
+                SlotType.INPUT.getWidth(), SlotType.INPUT.getHeight());
+        outputSlot = guiHelper.createDrawable(SlotType.OUTPUT.getTexture(), 0, 0,
+                SlotType.OUTPUT.getWidth(), SlotType.OUTPUT.getHeight());
+        catalystSlot = guiHelper.createDrawable(SlotType.EXTRA.getTexture(), 0, 0,
+                SlotType.EXTRA.getWidth(), SlotType.EXTRA.getHeight());
     }
 
     @Override
@@ -75,16 +94,16 @@ public final class SimulationChamberRecipeCategory implements IRecipeCategory<Di
     public void setRecipe(@NotNull IRecipeLayoutBuilder builder, @NotNull DisplayRecipe recipe,
                           @NotNull IFocusGroup focuses) {
         builder.setShapeless();
-        builder.addSlot(RecipeIngredientRole.CATALYST, 3, 5)
-                .setStandardSlotBackground()
+        builder.addSlot(RecipeIngredientRole.CATALYST, 4, 6)
+                .setBackground(catalystSlot, -1, -1)
                 .setSlotName("module")
                 .addItemStack(recipe.module())
                 .addTooltipCallback((view, tooltip) -> tooltip.add(
                         Component.translatable("jei.mekanicalcreate.slot.module")
                                 .withStyle(ChatFormatting.AQUA)));
         if (!recipe.condition().isEmpty()) {
-            builder.addSlot(RecipeIngredientRole.CATALYST, 3, 27)
-                    .setStandardSlotBackground()
+            builder.addSlot(RecipeIngredientRole.CATALYST, 23, 6)
+                    .setBackground(catalystSlot, -1, -1)
                     .setSlotName("condition")
                     .addItemStack(recipe.condition())
                     .addTooltipCallback((view, tooltip) -> tooltip.add(
@@ -92,14 +111,16 @@ public final class SimulationChamberRecipeCategory implements IRecipeCategory<Di
                                     .withStyle(ChatFormatting.AQUA)));
         }
 
+        int inputRows = Math.max(1, (recipe.inputs().size() + 3) / 4);
+        int inputStartY = 8 + (68 - inputRows * 19) / 2;
         for (int index = 0; index < recipe.inputs().size(); index++) {
             DisplayInput input = recipe.inputs().get(index);
-            int x = 35 + index % 4 * 19;
-            int y = 5 + index / 4 * 19;
+            int x = 36 + index % 4 * 19;
+            int y = inputStartY + index / 4 * 19;
             RecipeIngredientRole role = input.consumed()
                     ? RecipeIngredientRole.INPUT : RecipeIngredientRole.CATALYST;
             IRecipeSlotBuilder slot = builder.addSlot(role, x, y)
-                    .setStandardSlotBackground()
+                    .setBackground(inputSlot, -1, -1)
                     .setSlotName("material_" + index)
                     .addItemStacks(withCount(input));
             if (!input.consumed()) {
@@ -109,12 +130,14 @@ public final class SimulationChamberRecipeCategory implements IRecipeCategory<Di
             }
         }
 
+        int outputRows = Math.max(1, (recipe.outputs().size() + 1) / 2);
+        int outputStartY = 8 + (68 - outputRows * 19) / 2;
         for (int index = 0; index < recipe.outputs().size(); index++) {
             DisplayOutput output = recipe.outputs().get(index);
-            int x = 137 + index % 2 * 19;
-            int y = 14 + index / 2 * 19;
+            int x = 140 + index % 2 * 19;
+            int y = outputStartY + index / 2 * 19;
             IRecipeSlotBuilder slot = builder.addSlot(RecipeIngredientRole.OUTPUT, x, y)
-                    .setOutputSlotBackground()
+                    .setBackground(outputSlot, -1, -1)
                     .setSlotName("output_" + index)
                     .addItemStack(output.stack());
             if (output.chance() < 0.9999F) {
@@ -135,7 +158,8 @@ public final class SimulationChamberRecipeCategory implements IRecipeCategory<Di
     @Override
     public void draw(@NotNull DisplayRecipe recipe, @NotNull IRecipeSlotsView recipeSlotsView,
                      @NotNull GuiGraphics graphics, double mouseX, double mouseY) {
-        arrow.draw(graphics, 108, 33);
+        arrow.draw(graphics, 110, 36);
+        arrowFill.draw(graphics, 110, 36);
         graphics.drawString(Minecraft.getInstance().font, recipe.processName(), 35, 83,
                 0xFF404040, false);
         if (recipe.sequenceSteps() > 0) {

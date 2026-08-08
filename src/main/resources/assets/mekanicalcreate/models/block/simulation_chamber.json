@@ -1,3 +1,153 @@
 {
-  "parent": "mekanism:block/formulaic_assemblicator"
+  "credit": "Mekanical Create",
+  "ambientocclusion": true,
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "front": "mekanism:block/formulaic_assemblicator/front",
+    "back": "mekanism:block/formulaic_assemblicator/back",
+    "left": "mekanism:block/formulaic_assemblicator/left",
+    "right": "mekanism:block/formulaic_assemblicator/right",
+    "top": "mekanism:block/formulaic_assemblicator/top",
+    "bottom": "mekanism:block/formulaic_assemblicator/bottom",
+    "frame": "mekanism:block/steel_casing",
+    "screen": "mekanism:block/models/qio_dashboard_screen_led",
+    "port": "mekanism:block/models/ports_led",
+    "particle": "mekanism:block/steel_casing"
+  },
+  "elements": [
+    {
+      "name": "machine_core",
+      "from": [1, 1, 1],
+      "to": [15, 15, 15],
+      "faces": {
+        "north": {"texture": "#front"},
+        "east": {"texture": "#right"},
+        "south": {"texture": "#back"},
+        "west": {"texture": "#left"},
+        "up": {"texture": "#top"},
+        "down": {"texture": "#bottom"}
+      }
+    },
+    {
+      "name": "lower_plinth",
+      "from": [0, 0, 0],
+      "to": [16, 2, 16],
+      "faces": {
+        "north": {"texture": "#frame"}, "east": {"texture": "#frame"},
+        "south": {"texture": "#frame"}, "west": {"texture": "#frame"},
+        "up": {"texture": "#frame"}, "down": {"texture": "#frame"}
+      }
+    },
+    {
+      "name": "upper_cap",
+      "from": [0.5, 14, 0.5],
+      "to": [15.5, 16, 15.5],
+      "faces": {
+        "north": {"texture": "#frame"}, "east": {"texture": "#frame"},
+        "south": {"texture": "#frame"}, "west": {"texture": "#frame"},
+        "up": {"texture": "#top"}, "down": {"texture": "#frame"}
+      }
+    },
+    {
+      "name": "front_console_frame",
+      "from": [2.5, 5, 0.2],
+      "to": [13.5, 13.5, 1.15],
+      "faces": {
+        "north": {"texture": "#frame"}, "east": {"texture": "#frame"},
+        "south": {"texture": "#frame"}, "west": {"texture": "#frame"},
+        "up": {"texture": "#frame"}, "down": {"texture": "#frame"}
+      }
+    },
+    {
+      "name": "front_display",
+      "from": [3.5, 6, -0.05],
+      "to": [12.5, 12.5, 0.25],
+      "faces": {"north": {"uv": [0, 0, 16, 16], "texture": "#screen"}}
+    },
+    {
+      "name": "front_io_port",
+      "from": [6.5, 2.25, -0.1],
+      "to": [9.5, 5.1, 0.35],
+      "faces": {"north": {"uv": [0, 0, 16, 16], "texture": "#port"}}
+    },
+    {
+      "name": "front_left_rail",
+      "from": [0.35, 1, 0.35],
+      "to": [2, 15, 2],
+      "faces": {
+        "north": {"texture": "#frame"}, "east": {"texture": "#frame"},
+        "south": {"texture": "#frame"}, "west": {"texture": "#frame"},
+        "up": {"texture": "#frame"}, "down": {"texture": "#frame"}
+      }
+    },
+    {
+      "name": "front_right_rail",
+      "from": [14, 1, 0.35],
+      "to": [15.65, 15, 2],
+      "faces": {
+        "north": {"texture": "#frame"}, "east": {"texture": "#frame"},
+        "south": {"texture": "#frame"}, "west": {"texture": "#frame"},
+        "up": {"texture": "#frame"}, "down": {"texture": "#frame"}
+      }
+    },
+    {
+      "name": "back_left_rail",
+      "from": [0.35, 1, 14],
+      "to": [2, 15, 15.65],
+      "faces": {
+        "north": {"texture": "#frame"}, "east": {"texture": "#frame"},
+        "south": {"texture": "#frame"}, "west": {"texture": "#frame"},
+        "up": {"texture": "#frame"}, "down": {"texture": "#frame"}
+      }
+    },
+    {
+      "name": "back_right_rail",
+      "from": [14, 1, 14],
+      "to": [15.65, 15, 15.65],
+      "faces": {
+        "north": {"texture": "#frame"}, "east": {"texture": "#frame"},
+        "south": {"texture": "#frame"}, "west": {"texture": "#frame"},
+        "up": {"texture": "#frame"}, "down": {"texture": "#frame"}
+      }
+    },
+    {
+      "name": "left_service_band",
+      "from": [0.1, 4, 3],
+      "to": [0.6, 6, 13],
+      "faces": {"west": {"texture": "#port"}}
+    },
+    {
+      "name": "right_service_band",
+      "from": [15.4, 4, 3],
+      "to": [15.9, 6, 13],
+      "faces": {"east": {"texture": "#port"}}
+    },
+    {
+      "name": "top_vent_left",
+      "from": [3, 15.25, 3],
+      "to": [5, 16.25, 13],
+      "faces": {
+        "north": {"texture": "#frame"}, "east": {"texture": "#frame"},
+        "south": {"texture": "#frame"}, "west": {"texture": "#frame"}, "up": {"texture": "#top"}
+      }
+    },
+    {
+      "name": "top_vent_middle",
+      "from": [7, 15.25, 3],
+      "to": [9, 16.25, 13],
+      "faces": {
+        "north": {"texture": "#frame"}, "east": {"texture": "#frame"},
+        "south": {"texture": "#frame"}, "west": {"texture": "#frame"}, "up": {"texture": "#top"}
+      }
+    },
+    {
+      "name": "top_vent_right",
+      "from": [11, 15.25, 3],
+      "to": [13, 16.25, 13],
+      "faces": {
+        "north": {"texture": "#frame"}, "east": {"texture": "#frame"},
+        "south": {"texture": "#frame"}, "west": {"texture": "#frame"}, "up": {"texture": "#top"}
+      }
+    }
+  ]
 }

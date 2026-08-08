@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "A": { "item": "mekanism:alloy_atomic" },
+    "C": { "item": "mekanism:ultimate_control_circuit" },
+    "S": { "item": "mekanicalcreate:simulation_chamber" }
+  },
+  "pattern": [
+    "ACA",
+    "SSS",
+    "ACA"
+  ],
+  "result": {
+    "count": 1,
+    "id": "mekanicalcreate:super_simulation_chamber"
+  }
+}

@@ -31,7 +31,9 @@ Sequenced assembly is flattened into one operation: the starting item is consume
 
 JEI recipes are generated from the same catalog used by the server resolver. Module, fan condition, and non-consumed held tools use JEI's catalyst role, while flattened material counts use the input role for recipe-transfer and pattern-terminal compatibility.
 
-The machine exterior directly references Mekanism's Formulaic Assemblicator model and textures. Its screen is built from Mekanism's own GUI base, inner screens, slots, energy bar, progress indicator, information tab, configuration tab, draggable window, and side-configuration colors. Item and energy access can be configured independently for all six relative sides and is persisted in the block entity.
+The machine exterior uses a custom detailed JSON model while directly referencing Mekanism's Formulaic Assemblicator, steel-casing, QIO-screen, and port textures. Its screen is built from Mekanism's own GUI base, inner screens, slots, energy bar, progress indicator, information tab, configuration tab, draggable window, and side-configuration colors. Item and energy access can be configured independently for all six relative sides and is persisted in the block entity.
+
+The Super Simulation Chamber is a full-size 3×3, two-block-tall variant inspired by Mekanism's large generators. It uses Mekanism bounding blocks for real occupied space and proxies interaction and automation through the shell to the central controller. It intentionally shares the same processing behavior as the normal chamber; the current difference is construction scale and presentation rather than an unbalanced speed multiplier.
 
 ## Development
 

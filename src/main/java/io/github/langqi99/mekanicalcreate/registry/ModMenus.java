@@ -2,6 +2,7 @@ package io.github.langqi99.mekanicalcreate.registry;
 
 import io.github.langqi99.mekanicalcreate.MekanicalCreate;
 import io.github.langqi99.mekanicalcreate.content.SimulationChamberBlockEntity;
+import io.github.langqi99.mekanicalcreate.content.SuperSimulationChamberBlockEntity;
 import mekanism.common.inventory.container.tile.MekanismTileContainer;
 import mekanism.common.registration.impl.ContainerTypeDeferredRegister;
 import mekanism.common.registration.impl.ContainerTypeRegistryObject;
@@ -12,6 +13,11 @@ public final class ModMenus {
 
     public static final ContainerTypeRegistryObject<MekanismTileContainer<SimulationChamberBlockEntity>> SIMULATION_CHAMBER = MENUS
             .custom("simulation_chamber", SimulationChamberBlockEntity.class)
+            .offset(0, 18)
+            .build();
+
+    public static final ContainerTypeRegistryObject<MekanismTileContainer<SuperSimulationChamberBlockEntity>> SUPER_SIMULATION_CHAMBER = MENUS
+            .custom("super_simulation_chamber", SuperSimulationChamberBlockEntity.class)
             .offset(0, 18)
             .build();
 

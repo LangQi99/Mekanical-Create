@@ -32,18 +32,20 @@ import mekanism.common.tile.component.config.slot.InventorySlotInfo;
 import mekanism.common.tile.prefab.TileEntityConfigurableMachine;
 import mekanism.common.util.MekanismUtils;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.items.ItemHandlerHelper;
 import net.neoforged.neoforge.items.ItemStackHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public final class SimulationChamberBlockEntity extends TileEntityConfigurableMachine {
+public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine {
     public static final int INPUT_COUNT = 16;
     public static final int OUTPUT_COUNT = 4;
     private static final long BASE_ENERGY_CAPACITY = 100_000L;
@@ -64,7 +66,11 @@ public final class SimulationChamberBlockEntity extends TileEntityConfigurableMa
     private ExecutionPlan activePlan;
 
     public SimulationChamberBlockEntity(BlockPos pos, BlockState state) {
-        super(ModBlocks.SIMULATION_CHAMBER, pos, state);
+        this(ModBlocks.SIMULATION_CHAMBER, pos, state);
+    }
+
+    protected SimulationChamberBlockEntity(Holder<Block> blockProvider, BlockPos pos, BlockState state) {
+        super(blockProvider, pos, state);
 
         configComponent.setupItemIOConfig(List.copyOf(inputSlots), List.copyOf(outputSlots), energySlot, false);
         ConfigInfo itemConfig = configComponent.getConfig(TransmissionType.ITEM);
@@ -122,15 +128,15 @@ public final class SimulationChamberBlockEntity extends TileEntityConfigurableMa
 
         InventorySlotHelper builder = InventorySlotHelper.forSideWithConfig(this);
         moduleSlot = builder.addSlot(BasicInventorySlot.at(
-                SimulationChamberBlockEntity::isSupportedModule, configurationListener, 35, 17, 1));
+                SimulationChamberBlockEntity::isSupportedModule, configurationListener, 20, 8, 1));
         conditionSlot = builder.addSlot(new BasicInventorySlot(1,
                 (stack, automation) -> true,
                 (stack, automation) -> isFanModuleInstalled(),
                 SimulationChamberBlockEntity::isSupportedCondition,
-                configurationListener, 35, 44) {
+                configurationListener, 20, 26) {
             @Override
             public InventoryContainerSlot createContainerSlot() {
-                return new InventoryContainerSlot(this, 35, 44, ContainerSlotType.NORMAL,
+                return new InventoryContainerSlot(this, 20, 26, ContainerSlotType.NORMAL,
                         null, null, this::setStackUnchecked) {
                     @Override
                     public boolean isActive() {
@@ -143,15 +149,15 @@ public final class SimulationChamberBlockEntity extends TileEntityConfigurableMa
         });
 
         for (int input = 0; input < INPUT_COUNT; input++) {
-            int x = 71 + (input % 4) * 18;
+            int x = 51 + (input % 4) * 18;
             int y = 8 + (input / 4) * 18;
             inputSlots.add(builder.addSlot(InputInventorySlot.at(inputListener, x, y)));
         }
         for (int output = 0; output < OUTPUT_COUNT; output++) {
-            outputSlots.add(builder.addSlot(OutputInventorySlot.at(listener, 152, 8 + output * 18)));
+            outputSlots.add(builder.addSlot(OutputInventorySlot.at(listener, 154, 8 + output * 18)));
         }
         energySlot = builder.addSlot(EnergyInventorySlot.fillOrConvert(
-                energyContainer, this::getLevel, listener, 35, 62));
+                energyContainer, this::getLevel, listener, 1, 62));
         return builder.build();
     }
 
