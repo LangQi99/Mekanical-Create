@@ -119,11 +119,12 @@ public final class SimulationChamberRecipeCategory extends BaseRecipeCategory<Di
             IRecipeSlotBuilder slot = initItem(builder, RecipeIngredientRole.OUTPUT,
                     x, y, List.of(output.stack()))
                     .setSlotName("output_" + index);
-            slot.addTooltipCallback((view, tooltip) -> tooltip.add(
-                    Component.translatable("jei.mekanicalcreate.chance",
-                                    TextUtils.getPercent(output.chance()))
-                            .withStyle(output.chance() < 0.9999F
-                                    ? ChatFormatting.GOLD : ChatFormatting.GRAY)));
+            if (output.chance() < 0.9999F) {
+                slot.addTooltipCallback((view, tooltip) -> tooltip.add(
+                        Component.translatable("jei.mekanicalcreate.chance",
+                                        TextUtils.getPercent(output.chance()))
+                                .withStyle(ChatFormatting.GOLD)));
+            }
         }
     }
 
@@ -144,10 +145,12 @@ public final class SimulationChamberRecipeCategory extends BaseRecipeCategory<Di
                 break;
             }
             int displayedOutput = Math.min(firstOutput + 1, recipe.outputs().size() - 1);
-            graphics.drawCenteredString(font,
-                    TextUtils.getPercent(recipe.outputs().get(displayedOutput).chance()),
-                    OUTPUT_X + outputGroups.get(groupIndex).getWidth() / 2 - 1,
-                    OUTPUT_CHANCE_Y[groupIndex], 0xFF404040);
+            float chance = recipe.outputs().get(displayedOutput).chance();
+            if (chance < 0.9999F) {
+                graphics.drawCenteredString(font, TextUtils.getPercent(chance),
+                        OUTPUT_X + outputGroups.get(groupIndex).getWidth() / 2 - 1,
+                        OUTPUT_CHANCE_Y[groupIndex], 0xFF404040);
+            }
         }
         graphics.drawString(font, recipe.processName(), INPUT_X, 86, 0xFF404040, false);
         if (recipe.sequenceSteps() > 0) {
