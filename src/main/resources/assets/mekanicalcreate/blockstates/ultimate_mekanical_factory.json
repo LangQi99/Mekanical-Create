@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "mekanicalcreate:block/ultimate_mekanical_factory" },
+    "facing=east": { "model": "mekanicalcreate:block/ultimate_mekanical_factory", "y": 90 },
+    "facing=south": { "model": "mekanicalcreate:block/ultimate_mekanical_factory", "y": 180 },
+    "facing=west": { "model": "mekanicalcreate:block/ultimate_mekanical_factory", "y": 270 }
+  }
+}

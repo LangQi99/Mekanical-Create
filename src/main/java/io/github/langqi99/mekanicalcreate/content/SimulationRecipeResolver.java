@@ -111,15 +111,63 @@ public final class SimulationRecipeResolver {
         for (Candidate candidate : candidates) {
             ResourceLocation displayId = ResourceLocation.fromNamespaceAndPath(candidate.id.getNamespace(),
                     candidate.id.getPath() + "/" + variant);
-            List<DisplayInput> inputs = candidate.requirements.stream()
-                    .map(requirement -> new DisplayInput(requirement.ingredient, requirement.count,
-                            requirement.consumed))
-                    .toList();
+            List<DisplayInput> inputs = mergeDisplayInputs(candidate.requirements);
             target.add(new DisplayRecipe(displayId,
                     Component.translatable("jei.mekanicalcreate.process." + candidate.process),
                     module, condition, inputs, candidate.displayOutputs,
                     candidate.sequenceSteps, candidate.loops));
         }
+    }
+
+    private static List<DisplayInput> mergeDisplayInputs(List<Requirement> requirements) {
+        List<DisplayInput> merged = new ArrayList<>();
+        for (Requirement requirement : requirements) {
+            int existingIndex = -1;
+            for (int index = 0; index < merged.size(); index++) {
+                DisplayInput existing = merged.get(index);
+                if (existing.consumed == requirement.consumed
+                        && sameIngredient(existing.ingredient, requirement.ingredient)) {
+                    existingIndex = index;
+                    break;
+                }
+            }
+            if (existingIndex < 0) {
+                merged.add(new DisplayInput(requirement.ingredient, requirement.count,
+                        requirement.consumed));
+            } else {
+                DisplayInput existing = merged.get(existingIndex);
+                int count = requirement.consumed
+                        ? existing.count + requirement.count
+                        : Math.max(existing.count, requirement.count);
+                merged.set(existingIndex, new DisplayInput(existing.ingredient, count,
+                        existing.consumed));
+            }
+        }
+        return List.copyOf(merged);
+    }
+
+    private static boolean sameIngredient(Ingredient first, Ingredient second) {
+        ItemStack[] firstItems = first.getItems();
+        ItemStack[] secondItems = second.getItems();
+        if (firstItems.length != secondItems.length) {
+            return false;
+        }
+        boolean[] matched = new boolean[secondItems.length];
+        for (ItemStack firstItem : firstItems) {
+            boolean found = false;
+            for (int index = 0; index < secondItems.length; index++) {
+                if (!matched[index]
+                        && ItemStack.isSameItemSameComponents(firstItem, secondItems[index])) {
+                    matched[index] = true;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static List<Candidate> collectCandidates(Level level, ItemStack module, ItemStack condition) {

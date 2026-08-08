@@ -5,6 +5,7 @@ import io.github.langqi99.mekanicalcreate.client.SimulationChamberScreen;
 import io.github.langqi99.mekanicalcreate.content.SimulationRecipeResolver;
 import io.github.langqi99.mekanicalcreate.registry.ModBlocks;
 import io.github.langqi99.mekanicalcreate.registry.ModMenus;
+import java.util.List;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.registration.IGuiHandlerRegistration;
@@ -27,6 +28,16 @@ public final class MekanicalCreateJeiPlugin implements IModPlugin {
         return new ItemStack(ModBlocks.SIMULATION_CHAMBER.get());
     }
 
+    private static List<ItemStack> factoryStacks() {
+        return List.of(
+                chamberStack(),
+                new ItemStack(ModBlocks.BASIC_MEKANICAL_FACTORY.get()),
+                new ItemStack(ModBlocks.ADVANCED_MEKANICAL_FACTORY.get()),
+                new ItemStack(ModBlocks.ELITE_MEKANICAL_FACTORY.get()),
+                new ItemStack(ModBlocks.ULTIMATE_MEKANICAL_FACTORY.get())
+        );
+    }
+
     @NotNull
     @Override
     public ResourceLocation getPluginUid() {
@@ -46,13 +57,17 @@ public final class MekanicalCreateJeiPlugin implements IModPlugin {
             registration.addRecipes(SimulationChamberRecipeCategory.TYPE,
                     SimulationRecipeResolver.getDisplayRecipes(level));
         }
-        registration.addItemStackInfo(chamberStack(),
-                net.minecraft.network.chat.Component.translatable("jei.mekanicalcreate.info"));
+        for (ItemStack factory : factoryStacks()) {
+            registration.addItemStackInfo(factory,
+                    net.minecraft.network.chat.Component.translatable("jei.mekanicalcreate.info"));
+        }
     }
 
     @Override
     public void registerRecipeCatalysts(IRecipeCatalystRegistration registration) {
-        registration.addRecipeCatalyst(chamberStack(), SimulationChamberRecipeCategory.TYPE);
+        for (ItemStack factory : factoryStacks()) {
+            registration.addRecipeCatalyst(factory, SimulationChamberRecipeCategory.TYPE);
+        }
     }
 
     @Override

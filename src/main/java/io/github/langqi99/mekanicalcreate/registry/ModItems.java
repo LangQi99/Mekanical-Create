@@ -16,6 +16,10 @@ public final class ModItems {
             .icon(() -> ModBlocks.SIMULATION_CHAMBER.asItem().getDefaultInstance())
             .displayItems((parameters, output) -> {
                 output.accept(ModBlocks.SIMULATION_CHAMBER.asItem());
+                output.accept(ModBlocks.BASIC_MEKANICAL_FACTORY.asItem());
+                output.accept(ModBlocks.ADVANCED_MEKANICAL_FACTORY.asItem());
+                output.accept(ModBlocks.ELITE_MEKANICAL_FACTORY.asItem());
+                output.accept(ModBlocks.ULTIMATE_MEKANICAL_FACTORY.asItem());
             })
             .build());
 

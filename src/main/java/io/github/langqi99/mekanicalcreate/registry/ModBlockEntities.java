@@ -17,6 +17,34 @@ public final class ModBlockEntities {
             .withSimple(Capabilities.CONFIG_CARD)
             .build();
 
+    public static final TileEntityTypeRegistryObject<SimulationChamberBlockEntity> BASIC_MEKANICAL_FACTORY = TYPES
+            .mekBuilder(ModBlocks.BASIC_MEKANICAL_FACTORY,
+                    (pos, state) -> new SimulationChamberBlockEntity(ModBlocks.BASIC_MEKANICAL_FACTORY, pos, state))
+            .serverTicker(TileEntityMekanism::tickServer)
+            .withSimple(Capabilities.CONFIG_CARD)
+            .build();
+
+    public static final TileEntityTypeRegistryObject<SimulationChamberBlockEntity> ADVANCED_MEKANICAL_FACTORY = TYPES
+            .mekBuilder(ModBlocks.ADVANCED_MEKANICAL_FACTORY,
+                    (pos, state) -> new SimulationChamberBlockEntity(ModBlocks.ADVANCED_MEKANICAL_FACTORY, pos, state))
+            .serverTicker(TileEntityMekanism::tickServer)
+            .withSimple(Capabilities.CONFIG_CARD)
+            .build();
+
+    public static final TileEntityTypeRegistryObject<SimulationChamberBlockEntity> ELITE_MEKANICAL_FACTORY = TYPES
+            .mekBuilder(ModBlocks.ELITE_MEKANICAL_FACTORY,
+                    (pos, state) -> new SimulationChamberBlockEntity(ModBlocks.ELITE_MEKANICAL_FACTORY, pos, state))
+            .serverTicker(TileEntityMekanism::tickServer)
+            .withSimple(Capabilities.CONFIG_CARD)
+            .build();
+
+    public static final TileEntityTypeRegistryObject<SimulationChamberBlockEntity> ULTIMATE_MEKANICAL_FACTORY = TYPES
+            .mekBuilder(ModBlocks.ULTIMATE_MEKANICAL_FACTORY,
+                    (pos, state) -> new SimulationChamberBlockEntity(ModBlocks.ULTIMATE_MEKANICAL_FACTORY, pos, state))
+            .serverTicker(TileEntityMekanism::tickServer)
+            .withSimple(Capabilities.CONFIG_CARD)
+            .build();
+
     private ModBlockEntities() {
     }
 

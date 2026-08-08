@@ -31,7 +31,7 @@ Sequenced assembly is flattened into one operation: the starting item is consume
 
 JEI recipes are generated from the same catalog used by the server resolver. Module, fan condition, and non-consumed held tools use JEI's catalyst role, while flattened material counts use the input role for recipe-transfer and pattern-terminal compatibility.
 
-The machine exterior directly inherits Mekanism's Ultimate Enriching Factory composite model, including its recessed processing body, industrial shell, rear port, and tier indicator. Its screen is built from Mekanism's own GUI base, inner screens, slots, energy bar, progress indicator, information tab, configuration tab, draggable window, and side-configuration colors. Item and energy access can be configured independently for all six relative sides and is persisted in the block entity.
+The machine exterior directly inherits Mekanism's Enriching Factory model family, including its recessed processing body, industrial shell, rear port, and tier indicators. The entry-level Mekanical Factory uses the factory body's yellow processing lights; Mekanism's Basic, Advanced, Elite, and Ultimate factory installers upgrade it through green, red, cyan, and purple tiers. Each tier increases processing speed, energy usage, and energy capacity while preserving inventory, energy, upgrades, and side configuration during installation. Its screen is built from Mekanism's own GUI base, inner screens, slots, energy bar, progress indicator, information tab, configuration tab, draggable window, and side-configuration colors. Item and energy access can be configured independently for all six relative sides and is persisted in the block entity.
 
 ## Development
 

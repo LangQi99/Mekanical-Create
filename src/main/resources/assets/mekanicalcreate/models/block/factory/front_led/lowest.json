@@ -1,0 +1,25 @@
+{
+  "textures": {
+    "led": "mekanism:block/factory/enriching/enriching_factory_front"
+  },
+  "elements": [
+    {
+      "name": "front_panel_led",
+      "from": [4.98, 14.99, 0.01],
+      "to": [11.02, 15.99, 1.01],
+      "faces": {
+        "north": {
+          "uv": [1, 10, 2, 11],
+          "texture": "#led",
+          "cullface": "north"
+        },
+        "up": {
+          "uv": [1, 10, 2, 11],
+          "rotation": 180,
+          "texture": "#led",
+          "cullface": "up"
+        }
+      }
+    }
+  ]
+}

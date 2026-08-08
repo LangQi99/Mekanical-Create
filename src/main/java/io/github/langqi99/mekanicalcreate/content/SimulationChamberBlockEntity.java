@@ -11,6 +11,8 @@ import mekanism.api.IContentsListener;
 import mekanism.api.RelativeSide;
 import mekanism.api.energy.IEnergyContainer;
 import mekanism.api.inventory.IInventorySlot;
+import mekanism.api.tier.BaseTier;
+import mekanism.common.block.attribute.Attribute;
 import mekanism.common.capabilities.energy.MachineEnergyContainer;
 import mekanism.common.capabilities.holder.energy.EnergyContainerHelper;
 import mekanism.common.capabilities.holder.energy.IEnergyContainerHolder;
@@ -26,11 +28,14 @@ import mekanism.common.inventory.slot.InputInventorySlot;
 import mekanism.common.inventory.slot.OutputInventorySlot;
 import mekanism.common.lib.transmitter.TransmissionType;
 import mekanism.common.tile.component.TileComponentEjector;
+import mekanism.common.tile.component.ITileComponent;
 import mekanism.common.tile.component.config.ConfigInfo;
 import mekanism.common.tile.component.config.DataType;
 import mekanism.common.tile.component.config.slot.InventorySlotInfo;
 import mekanism.common.tile.prefab.TileEntityConfigurableMachine;
 import mekanism.common.util.MekanismUtils;
+import mekanism.common.upgrade.IUpgradeData;
+import mekanism.common.upgrade.MachineUpgradeData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderLookup;
@@ -69,7 +74,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         this(ModBlocks.SIMULATION_CHAMBER, pos, state);
     }
 
-    protected SimulationChamberBlockEntity(Holder<Block> blockProvider, BlockPos pos, BlockState state) {
+    public SimulationChamberBlockEntity(Holder<Block> blockProvider, BlockPos pos, BlockState state) {
         super(blockProvider, pos, state);
 
         configComponent.setupItemIOConfig(List.copyOf(inputSlots), List.copyOf(outputSlots), energySlot, false);
@@ -96,11 +101,31 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     }
 
     public static long getBaseEnergyCapacity() {
-        return BASE_ENERGY_CAPACITY;
+        return getBaseEnergyCapacity(null);
     }
 
     public static long getBaseEnergyUsage() {
-        return BASE_ENERGY_USAGE;
+        return getBaseEnergyUsage(null);
+    }
+
+    public static long getBaseEnergyCapacity(@Nullable BaseTier tier) {
+        return BASE_ENERGY_CAPACITY * getTierMultiplier(tier);
+    }
+
+    public static long getBaseEnergyUsage(@Nullable BaseTier tier) {
+        return BASE_ENERGY_USAGE * getTierMultiplier(tier);
+    }
+
+    private static long getTierMultiplier(@Nullable BaseTier tier) {
+        if (tier == null) {
+            return 1;
+        }
+        return switch (tier) {
+            case BASIC -> 2;
+            case ADVANCED -> 4;
+            case ELITE -> 8;
+            case ULTIMATE, CREATIVE -> 16;
+        };
     }
 
     @NotNull
@@ -149,7 +174,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         });
 
         for (int input = 0; input < INPUT_COUNT; input++) {
-            int x = 54 + (input % 4) * 18;
+            int x = 51 + (input % 4) * 18;
             int y = 24 + (input / 4) * 18;
             inputSlots.add(builder.addSlot(InputInventorySlot.at(inputListener, x, y)));
         }
@@ -157,7 +182,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             outputSlots.add(builder.addSlot(OutputInventorySlot.at(listener, 154, 24 + output * 18)));
         }
         energySlot = builder.addSlot(EnergyInventorySlot.fillOrConvert(
-                energyContainer, this::getLevel, listener, 5, 78));
+                energyContainer, this::getLevel, listener, 6, 80));
         return builder.build();
     }
 
@@ -188,7 +213,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                 return sendUpdatePacket;
             }
             progress = 0;
-            duration = MekanismUtils.getTicks(this, Math.max(1, activePlan.duration()));
+            duration = MekanismUtils.getTicks(this, getTierDuration(activePlan.duration()));
             planDirty = false;
         }
 
@@ -269,6 +294,17 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         }
     }
 
+    private int getTierDuration(int baseDuration) {
+        BaseTier tier = Attribute.getBaseTier(getBlockHolder());
+        double multiplier = tier == null ? 1.0 : switch (tier) {
+            case BASIC -> 0.75;
+            case ADVANCED -> 0.5;
+            case ELITE -> 1.0 / 3.0;
+            case ULTIMATE, CREATIVE -> 0.25;
+        };
+        return Math.max(1, (int) Math.ceil(Math.max(1, baseDuration) * multiplier));
+    }
+
     public boolean isFanModuleInstalled() {
         return moduleSlot.getStack().is(AllBlocks.ENCASED_FAN.asItem());
     }
@@ -316,6 +352,49 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         super.loadAdditional(tag, provider);
         // Active plans are deliberately ephemeral. Re-resolve after a reload so a
         // datapack recipe change can never finish an old operation.
+        progress = 0;
+        duration = DEFAULT_DURATION;
+        activePlan = null;
+        planDirty = true;
+    }
+
+    @NotNull
+    @Override
+    public MachineUpgradeData getUpgradeData(HolderLookup.Provider provider) {
+        List<IInventorySlot> storedInputs = new ArrayList<>(INPUT_COUNT + 2);
+        storedInputs.add(moduleSlot);
+        storedInputs.add(conditionSlot);
+        storedInputs.addAll(inputSlots);
+        List<IInventorySlot> storedOutputs = new ArrayList<>(outputSlots);
+        return new MachineUpgradeData(provider, redstone, getControlType(), energyContainer,
+                new int[]{progress}, energySlot, storedInputs, storedOutputs, false, getComponents());
+    }
+
+    @Override
+    public void parseUpgradeData(HolderLookup.Provider provider, @NotNull IUpgradeData upgradeData) {
+        if (!(upgradeData instanceof MachineUpgradeData data)
+                || data.inputSlots.size() != INPUT_COUNT + 2
+                || data.outputSlots.size() != OUTPUT_COUNT) {
+            super.parseUpgradeData(provider, upgradeData);
+            return;
+        }
+        redstone = data.redstone;
+        setControlType(data.controlType);
+        energyContainer.setEnergy(data.energyContainer.getEnergy());
+        energySlot.deserializeNBT(provider, data.energySlot.serializeNBT(provider));
+        moduleSlot.deserializeNBT(provider, data.inputSlots.get(0).serializeNBT(provider));
+        conditionSlot.deserializeNBT(provider, data.inputSlots.get(1).serializeNBT(provider));
+        for (int index = 0; index < INPUT_COUNT; index++) {
+            inputSlots.get(index).deserializeNBT(provider,
+                    data.inputSlots.get(index + 2).serializeNBT(provider));
+        }
+        for (int index = 0; index < OUTPUT_COUNT; index++) {
+            outputSlots.get(index).deserializeNBT(provider,
+                    data.outputSlots.get(index).serializeNBT(provider));
+        }
+        for (ITileComponent component : getComponents()) {
+            component.read(data.components, provider);
+        }
         progress = 0;
         duration = DEFAULT_DURATION;
         activePlan = null;

@@ -1,0 +1,10 @@
+{
+  "type": "minecraft:block",
+  "pools": [{
+    "bonus_rolls": 0.0,
+    "conditions": [{ "condition": "minecraft:survives_explosion" }],
+    "entries": [{ "type": "minecraft:item", "name": "mekanicalcreate:elite_mekanical_factory" }],
+    "rolls": 1.0
+  }],
+  "random_sequence": "mekanicalcreate:blocks/elite_mekanical_factory"
+}
