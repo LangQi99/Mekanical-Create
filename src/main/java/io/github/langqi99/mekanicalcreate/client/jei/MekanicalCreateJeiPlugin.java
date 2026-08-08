@@ -73,7 +73,7 @@ public final class MekanicalCreateJeiPlugin implements IModPlugin {
     @Override
     public void registerGuiHandlers(IGuiHandlerRegistration registration) {
         registration.addRecipeClickArea(SimulationChamberScreen.class,
-                125, 48, 28, 14, SimulationChamberRecipeCategory.TYPE);
+                123, 55, 28, 8, SimulationChamberRecipeCategory.TYPE);
     }
 
     @Override
