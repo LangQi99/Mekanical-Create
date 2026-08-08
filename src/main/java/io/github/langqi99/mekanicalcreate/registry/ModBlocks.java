@@ -7,6 +7,8 @@ import io.github.langqi99.mekanicalcreate.content.ModBlockShapes;
 import mekanism.api.tier.BaseTier;
 import mekanism.common.attachments.component.AttachedEjector;
 import mekanism.common.attachments.component.AttachedSideConfig;
+import mekanism.common.attachments.containers.ContainerType;
+import mekanism.common.attachments.containers.item.ItemSlotsBuilder;
 import mekanism.common.block.attribute.AttributeTier;
 import mekanism.common.block.attribute.AttributeUpgradeable;
 import mekanism.common.block.attribute.AttributeUpgradeSupport;
@@ -17,7 +19,9 @@ import mekanism.common.item.block.ItemBlockTooltip;
 import mekanism.common.lib.transmitter.TransmissionType;
 import mekanism.common.registration.impl.BlockDeferredRegister;
 import mekanism.common.registration.impl.BlockRegistryObject;
+import mekanism.common.registration.impl.ItemRegistryObject;
 import mekanism.common.registries.MekanismDataComponents;
+import mekanism.common.registries.MekanismSounds;
 import mekanism.common.tier.FactoryTier;
 import net.minecraft.world.level.material.MapColor;
 import net.neoforged.bus.api.IEventBus;
@@ -28,9 +32,10 @@ public final class ModBlocks {
     public static final Machine<SimulationChamberBlockEntity> SIMULATION_CHAMBER_TYPE = MachineBuilder
             .createMachine(() -> ModBlockEntities.SIMULATION_CHAMBER, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
             .withGui(() -> ModMenus.SIMULATION_CHAMBER)
+            .withSound(MekanismSounds.ENRICHMENT_CHAMBER)
             .withEnergyConfig(() -> SimulationChamberBlockEntity.getBaseEnergyUsage(null),
                     () -> SimulationChamberBlockEntity.getBaseEnergyCapacity(null))
-            .with(AttributeUpgradeSupport.SPEED_ENERGY,
+            .with(AttributeUpgradeSupport.DEFAULT_MACHINE_UPGRADES,
                     new AttributeUpgradeable(() -> ModBlocks.BASIC_MEKANICAL_FACTORY))
             .withSideConfig(TransmissionType.ITEM, TransmissionType.ENERGY)
             .withCustomShape(ModBlockShapes.SIMULATION_CHAMBER)
@@ -43,14 +48,16 @@ public final class ModBlocks {
                     () -> new BlockTile<>(SIMULATION_CHAMBER_TYPE, properties -> properties.mapColor(MapColor.METAL)),
                     (block, properties) -> new ItemBlockTooltip<>(block, true, properties
                             .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
-                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)));
+                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))
+                    .forItemHolder(holder -> addItemAttachments(holder));
 
     public static final Machine<SimulationChamberBlockEntity> BASIC_MEKANICAL_FACTORY_TYPE = MachineBuilder
             .createMachine(() -> ModBlockEntities.BASIC_MEKANICAL_FACTORY, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
             .withGui(() -> ModMenus.SIMULATION_CHAMBER)
+            .withSound(MekanismSounds.ENRICHMENT_CHAMBER)
             .withEnergyConfig(() -> SimulationChamberBlockEntity.getBaseEnergyUsage(BaseTier.BASIC),
                     () -> SimulationChamberBlockEntity.getBaseEnergyCapacity(BaseTier.BASIC))
-            .with(AttributeUpgradeSupport.SPEED_ENERGY, new AttributeTier<>(FactoryTier.BASIC),
+            .with(AttributeUpgradeSupport.DEFAULT_MACHINE_UPGRADES, new AttributeTier<>(FactoryTier.BASIC),
                     new AttributeUpgradeable(() -> ModBlocks.ADVANCED_MEKANICAL_FACTORY))
             .withSideConfig(TransmissionType.ITEM, TransmissionType.ENERGY)
             .withCustomShape(ModBlockShapes.SIMULATION_CHAMBER)
@@ -63,14 +70,16 @@ public final class ModBlocks {
                     () -> new BlockTile<>(BASIC_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
                     (block, properties) -> new ItemBlockTooltip<>(block, true, properties
                             .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
-                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)));
+                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))
+                    .forItemHolder(holder -> addItemAttachments(holder));
 
     public static final Machine<SimulationChamberBlockEntity> ADVANCED_MEKANICAL_FACTORY_TYPE = MachineBuilder
             .createMachine(() -> ModBlockEntities.ADVANCED_MEKANICAL_FACTORY, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
             .withGui(() -> ModMenus.SIMULATION_CHAMBER)
+            .withSound(MekanismSounds.ENRICHMENT_CHAMBER)
             .withEnergyConfig(() -> SimulationChamberBlockEntity.getBaseEnergyUsage(BaseTier.ADVANCED),
                     () -> SimulationChamberBlockEntity.getBaseEnergyCapacity(BaseTier.ADVANCED))
-            .with(AttributeUpgradeSupport.SPEED_ENERGY, new AttributeTier<>(FactoryTier.ADVANCED),
+            .with(AttributeUpgradeSupport.DEFAULT_MACHINE_UPGRADES, new AttributeTier<>(FactoryTier.ADVANCED),
                     new AttributeUpgradeable(() -> ModBlocks.ELITE_MEKANICAL_FACTORY))
             .withSideConfig(TransmissionType.ITEM, TransmissionType.ENERGY)
             .withCustomShape(ModBlockShapes.SIMULATION_CHAMBER)
@@ -83,14 +92,16 @@ public final class ModBlocks {
                     () -> new BlockTile<>(ADVANCED_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
                     (block, properties) -> new ItemBlockTooltip<>(block, true, properties
                             .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
-                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)));
+                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))
+                    .forItemHolder(holder -> addItemAttachments(holder));
 
     public static final Machine<SimulationChamberBlockEntity> ELITE_MEKANICAL_FACTORY_TYPE = MachineBuilder
             .createMachine(() -> ModBlockEntities.ELITE_MEKANICAL_FACTORY, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
             .withGui(() -> ModMenus.SIMULATION_CHAMBER)
+            .withSound(MekanismSounds.ENRICHMENT_CHAMBER)
             .withEnergyConfig(() -> SimulationChamberBlockEntity.getBaseEnergyUsage(BaseTier.ELITE),
                     () -> SimulationChamberBlockEntity.getBaseEnergyCapacity(BaseTier.ELITE))
-            .with(AttributeUpgradeSupport.SPEED_ENERGY, new AttributeTier<>(FactoryTier.ELITE),
+            .with(AttributeUpgradeSupport.DEFAULT_MACHINE_UPGRADES, new AttributeTier<>(FactoryTier.ELITE),
                     new AttributeUpgradeable(() -> ModBlocks.ULTIMATE_MEKANICAL_FACTORY))
             .withSideConfig(TransmissionType.ITEM, TransmissionType.ENERGY)
             .withCustomShape(ModBlockShapes.SIMULATION_CHAMBER)
@@ -103,14 +114,16 @@ public final class ModBlocks {
                     () -> new BlockTile<>(ELITE_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
                     (block, properties) -> new ItemBlockTooltip<>(block, true, properties
                             .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
-                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)));
+                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))
+                    .forItemHolder(holder -> addItemAttachments(holder));
 
     public static final Machine<SimulationChamberBlockEntity> ULTIMATE_MEKANICAL_FACTORY_TYPE = MachineBuilder
             .createMachine(() -> ModBlockEntities.ULTIMATE_MEKANICAL_FACTORY, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
             .withGui(() -> ModMenus.SIMULATION_CHAMBER)
+            .withSound(MekanismSounds.ENRICHMENT_CHAMBER)
             .withEnergyConfig(() -> SimulationChamberBlockEntity.getBaseEnergyUsage(BaseTier.ULTIMATE),
                     () -> SimulationChamberBlockEntity.getBaseEnergyCapacity(BaseTier.ULTIMATE))
-            .with(AttributeUpgradeSupport.SPEED_ENERGY, new AttributeTier<>(FactoryTier.ULTIMATE))
+            .with(AttributeUpgradeSupport.DEFAULT_MACHINE_UPGRADES, new AttributeTier<>(FactoryTier.ULTIMATE))
             .withSideConfig(TransmissionType.ITEM, TransmissionType.ENERGY)
             .withCustomShape(ModBlockShapes.SIMULATION_CHAMBER)
             .build();
@@ -122,7 +135,17 @@ public final class ModBlocks {
                     () -> new BlockTile<>(ULTIMATE_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
                     (block, properties) -> new ItemBlockTooltip<>(block, true, properties
                             .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
-                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)));
+                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))
+                    .forItemHolder(holder -> addItemAttachments(holder));
+
+    private static void addItemAttachments(ItemRegistryObject<? extends ItemBlockTooltip<?>> holder) {
+        holder.addAttachmentOnlyContainers(ContainerType.ITEM, () -> ItemSlotsBuilder.builder()
+                .addBasic(2)
+                .addInput(SimulationChamberBlockEntity.INPUT_COUNT)
+                .addOutput(SimulationChamberBlockEntity.OUTPUT_COUNT)
+                .addEnergy()
+                .build());
+    }
 
     private ModBlocks() {
     }

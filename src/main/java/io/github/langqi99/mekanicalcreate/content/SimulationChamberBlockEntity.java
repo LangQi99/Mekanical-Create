@@ -27,6 +27,7 @@ import mekanism.common.inventory.slot.EnergyInventorySlot;
 import mekanism.common.inventory.slot.InputInventorySlot;
 import mekanism.common.inventory.slot.OutputInventorySlot;
 import mekanism.common.lib.transmitter.TransmissionType;
+import mekanism.common.registries.MekanismSounds;
 import mekanism.common.tile.component.TileComponentEjector;
 import mekanism.common.tile.component.ITileComponent;
 import mekanism.common.tile.component.config.ConfigInfo;
@@ -40,6 +41,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
@@ -399,6 +401,11 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         duration = DEFAULT_DURATION;
         activePlan = null;
         planDirty = true;
+        Level level = getLevel();
+        if (level != null && !level.isClientSide()) {
+            level.playSound(null, getBlockPos(), MekanismSounds.HYDRAULIC.get(),
+                    SoundSource.BLOCKS, 0.8F, 1.0F);
+        }
     }
 
     private static boolean isSupportedModule(ItemStack stack) {
