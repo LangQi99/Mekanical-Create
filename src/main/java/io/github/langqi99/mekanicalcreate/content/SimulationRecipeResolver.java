@@ -4,6 +4,7 @@ import com.simibubi.create.AllBlocks;
 import com.simibubi.create.AllRecipeTypes;
 import com.simibubi.create.content.kinetics.crusher.CrushingRecipe;
 import com.simibubi.create.content.kinetics.deployer.DeployerApplicationRecipe;
+import com.simibubi.create.content.kinetics.deployer.ManualApplicationRecipe;
 import com.simibubi.create.content.kinetics.fan.processing.AllFanProcessingTypes;
 import com.simibubi.create.content.kinetics.fan.processing.FanProcessingType;
 import com.simibubi.create.content.kinetics.fan.processing.HauntingRecipe;
@@ -177,6 +178,11 @@ public final class SimulationRecipeResolver {
         if (module.is(AllBlocks.DEPLOYER.asItem())) {
             RecipeType<DeployerApplicationRecipe> type = AllRecipeTypes.DEPLOYING.getType();
             addProcessing(candidates, recipes.getAllRecipesFor(type),
+                    "deploying", 20, true);
+            RecipeType<ManualApplicationRecipe> applicationType = AllRecipeTypes.ITEM_APPLICATION.getType();
+            addProcessing(candidates, recipes.getAllRecipesFor(applicationType).stream()
+                            .map(ManualApplicationRecipe::asDeploying)
+                            .toList(),
                     "deploying", 20, true);
             addSequenced(candidates, recipes, ModuleKind.DEPLOYER);
         } else if (module.is(AllBlocks.MECHANICAL_PRESS.asItem())) {
