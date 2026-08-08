@@ -128,15 +128,15 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
 
         InventorySlotHelper builder = InventorySlotHelper.forSideWithConfig(this);
         moduleSlot = builder.addSlot(BasicInventorySlot.at(
-                SimulationChamberBlockEntity::isSupportedModule, configurationListener, 20, 8, 1));
+                SimulationChamberBlockEntity::isSupportedModule, configurationListener, 25, 24, 1));
         conditionSlot = builder.addSlot(new BasicInventorySlot(1,
                 (stack, automation) -> true,
                 (stack, automation) -> isFanModuleInstalled(),
                 SimulationChamberBlockEntity::isSupportedCondition,
-                configurationListener, 20, 26) {
+                configurationListener, 25, 42) {
             @Override
             public InventoryContainerSlot createContainerSlot() {
-                return new InventoryContainerSlot(this, 20, 26, ContainerSlotType.NORMAL,
+                return new InventoryContainerSlot(this, 25, 42, ContainerSlotType.NORMAL,
                         null, null, this::setStackUnchecked) {
                     @Override
                     public boolean isActive() {
@@ -149,15 +149,15 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         });
 
         for (int input = 0; input < INPUT_COUNT; input++) {
-            int x = 51 + (input % 4) * 18;
-            int y = 8 + (input / 4) * 18;
+            int x = 54 + (input % 4) * 18;
+            int y = 24 + (input / 4) * 18;
             inputSlots.add(builder.addSlot(InputInventorySlot.at(inputListener, x, y)));
         }
         for (int output = 0; output < OUTPUT_COUNT; output++) {
-            outputSlots.add(builder.addSlot(OutputInventorySlot.at(listener, 154, 8 + output * 18)));
+            outputSlots.add(builder.addSlot(OutputInventorySlot.at(listener, 154, 24 + output * 18)));
         }
         energySlot = builder.addSlot(EnergyInventorySlot.fillOrConvert(
-                energyContainer, this::getLevel, listener, 1, 62));
+                energyContainer, this::getLevel, listener, 5, 78));
         return builder.build();
     }
 

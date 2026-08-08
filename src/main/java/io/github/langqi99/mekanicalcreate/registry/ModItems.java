@@ -16,7 +16,6 @@ public final class ModItems {
             .icon(() -> ModBlocks.SIMULATION_CHAMBER.asItem().getDefaultInstance())
             .displayItems((parameters, output) -> {
                 output.accept(ModBlocks.SIMULATION_CHAMBER.asItem());
-                output.accept(ModBlocks.SUPER_SIMULATION_CHAMBER.asItem());
             })
             .build());
 

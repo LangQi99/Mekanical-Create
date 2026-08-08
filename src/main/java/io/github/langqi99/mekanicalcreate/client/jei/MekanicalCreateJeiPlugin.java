@@ -2,7 +2,6 @@ package io.github.langqi99.mekanicalcreate.client.jei;
 
 import io.github.langqi99.mekanicalcreate.MekanicalCreate;
 import io.github.langqi99.mekanicalcreate.client.SimulationChamberScreen;
-import io.github.langqi99.mekanicalcreate.client.SuperSimulationChamberScreen;
 import io.github.langqi99.mekanicalcreate.content.SimulationRecipeResolver;
 import io.github.langqi99.mekanicalcreate.registry.ModBlocks;
 import io.github.langqi99.mekanicalcreate.registry.ModMenus;
@@ -28,10 +27,6 @@ public final class MekanicalCreateJeiPlugin implements IModPlugin {
         return new ItemStack(ModBlocks.SIMULATION_CHAMBER.get());
     }
 
-    private static ItemStack superChamberStack() {
-        return new ItemStack(ModBlocks.SUPER_SIMULATION_CHAMBER.get());
-    }
-
     @NotNull
     @Override
     public ResourceLocation getPluginUid() {
@@ -53,29 +48,22 @@ public final class MekanicalCreateJeiPlugin implements IModPlugin {
         }
         registration.addItemStackInfo(chamberStack(),
                 net.minecraft.network.chat.Component.translatable("jei.mekanicalcreate.info"));
-        registration.addItemStackInfo(superChamberStack(),
-                net.minecraft.network.chat.Component.translatable("jei.mekanicalcreate.super_info"));
     }
 
     @Override
     public void registerRecipeCatalysts(IRecipeCatalystRegistration registration) {
         registration.addRecipeCatalyst(chamberStack(), SimulationChamberRecipeCategory.TYPE);
-        registration.addRecipeCatalyst(superChamberStack(), SimulationChamberRecipeCategory.TYPE);
     }
 
     @Override
     public void registerGuiHandlers(IGuiHandlerRegistration registration) {
         registration.addRecipeClickArea(SimulationChamberScreen.class,
-                124, 32, 28, 14, SimulationChamberRecipeCategory.TYPE);
-        registration.addRecipeClickArea(SuperSimulationChamberScreen.class,
-                124, 32, 28, 14, SimulationChamberRecipeCategory.TYPE);
+                125, 48, 28, 14, SimulationChamberRecipeCategory.TYPE);
     }
 
     @Override
     public void registerRecipeTransferHandlers(IRecipeTransferRegistration registration) {
         registration.addRecipeTransferHandler(new SimulationChamberTransferInfo<>(
                 ModMenus.SIMULATION_CHAMBER.get()));
-        registration.addRecipeTransferHandler(new SimulationChamberTransferInfo<>(
-                ModMenus.SUPER_SIMULATION_CHAMBER.get()));
     }
 }

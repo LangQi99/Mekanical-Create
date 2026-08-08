@@ -3,8 +3,7 @@ package io.github.langqi99.mekanicalcreate;
 import mekanism.api.text.ILangEntry;
 
 public enum ModLang implements ILangEntry {
-    DESCRIPTION_SIMULATION_CHAMBER("description.mekanicalcreate.simulation_chamber"),
-    DESCRIPTION_SUPER_SIMULATION_CHAMBER("description.mekanicalcreate.super_simulation_chamber");
+    DESCRIPTION_SIMULATION_CHAMBER("description.mekanicalcreate.simulation_chamber");
 
     private final String translationKey;
 

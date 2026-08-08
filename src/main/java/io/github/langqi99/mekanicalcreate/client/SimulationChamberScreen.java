@@ -25,17 +25,17 @@ abstract class AbstractSimulationChamberScreen<TILE extends SimulationChamberBlo
     protected AbstractSimulationChamberScreen(MekanismTileContainer<TILE> menu,
                                               Inventory inventory, Component title) {
         super(menu, inventory, title);
-        imageHeight += 18;
-        inventoryLabelY += 18;
+        imageHeight += 36;
+        inventoryLabelY += 36;
         dynamicSlots = true;
     }
 
     @Override
     protected void addGuiElements() {
         super.addGuiElements();
-        addRenderableWidget(new GuiVerticalPowerBar(this, tile.getEnergyContainer(), 7, 8))
+        addRenderableWidget(new GuiVerticalPowerBar(this, tile.getEnergyContainer(), 11, 24))
                 .warning(WarningType.NOT_ENOUGH_ENERGY, tile::isEnergyStarved);
-        addRenderableWidget(new GuiProgress(tile::getScaledProgress, ProgressType.SMALL_RIGHT, this, 124, 35));
+        addRenderableWidget(new GuiProgress(tile::getScaledProgress, ProgressType.SMALL_RIGHT, this, 125, 51));
         addRenderableWidget(new GuiEnergyTab(this, tile.getEnergyContainer(), tile::getActive));
     }
 
