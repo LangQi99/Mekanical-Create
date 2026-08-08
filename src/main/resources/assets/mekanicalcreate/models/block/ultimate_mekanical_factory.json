@@ -1,3 +1,17 @@
 {
-  "parent": "mekanism:block/factory/enriching/ultimate"
+  "loader": "neoforge:composite",
+  "parent": "block/block",
+  "textures": {
+    "particle": "mekanicalcreate:block/factory/mekanical_factory_front"
+  },
+  "children": {
+    "base": {
+      "parent": "mekanism:block/factory/enriching/base",
+      "textures": {
+        "front": "mekanicalcreate:block/factory/mekanical_factory_front",
+        "particle": "mekanicalcreate:block/factory/mekanical_factory_front"
+      }
+    },
+    "front_led": { "parent": "mekanism:block/factory/front_led/ultimate" }
+  }
 }

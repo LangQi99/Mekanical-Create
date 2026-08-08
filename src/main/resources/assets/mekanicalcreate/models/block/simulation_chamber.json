@@ -2,11 +2,15 @@
   "loader": "neoforge:composite",
   "parent": "block/block",
   "textures": {
-    "particle": "mekanism:block/factory/enriching/enriching_factory_front"
+    "particle": "mekanicalcreate:block/factory/mekanical_factory_front"
   },
   "children": {
     "base": {
-      "parent": "mekanism:block/factory/enriching/base"
+      "parent": "mekanism:block/factory/enriching/base",
+      "textures": {
+        "front": "mekanicalcreate:block/factory/mekanical_factory_front",
+        "particle": "mekanicalcreate:block/factory/mekanical_factory_front"
+      }
     },
     "front_led": {
       "parent": "mekanicalcreate:block/factory/front_led/lowest"
