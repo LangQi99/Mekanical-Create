@@ -1,6 +1,5 @@
 package io.github.langqi99.mekanicalcreate.client.jei;
 
-import com.mojang.serialization.Codec;
 import io.github.langqi99.mekanicalcreate.MekanicalCreate;
 import io.github.langqi99.mekanicalcreate.content.SimulationRecipeResolver.DisplayInput;
 import io.github.langqi99.mekanicalcreate.content.SimulationRecipeResolver.DisplayOutput;
@@ -13,18 +12,17 @@ import mekanism.client.gui.element.bar.GuiVerticalPowerBar;
 import mekanism.client.gui.element.progress.ProgressType;
 import mekanism.client.gui.element.slot.GuiSlot;
 import mekanism.client.gui.element.slot.SlotType;
-import mekanism.client.recipe_viewer.RecipeViewerUtils;
-import mekanism.client.recipe_viewer.jei.BaseRecipeCategory;
+import mekanism.client.jei.BaseRecipeCategory;
+import mekanism.client.jei.MekanismJEI;
+import mekanism.client.jei.MekanismJEIRecipeType;
 import mekanism.common.inventory.container.slot.SlotOverlay;
 import mekanism.common.util.text.TextUtils;
 import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.gui.builder.IRecipeLayoutBuilder;
 import mezz.jei.api.gui.builder.IRecipeSlotBuilder;
 import mezz.jei.api.gui.ingredient.IRecipeSlotsView;
-import mezz.jei.api.helpers.ICodecHelper;
 import mezz.jei.api.helpers.IGuiHelper;
 import mezz.jei.api.recipe.IFocusGroup;
-import mezz.jei.api.recipe.IRecipeManager;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.RecipeType;
 import net.minecraft.ChatFormatting;
@@ -34,11 +32,12 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 public final class SimulationChamberRecipeCategory extends BaseRecipeCategory<DisplayRecipe> {
-    public static final RecipeType<DisplayRecipe> TYPE = RecipeType.create(
-            MekanicalCreate.MOD_ID, "simulation_chamber", DisplayRecipe.class);
+    private static final MekanismJEIRecipeType<DisplayRecipe> MEKANISM_TYPE =
+            new MekanismJEIRecipeType<>(new ResourceLocation(MekanicalCreate.MOD_ID, "simulation_chamber"),
+                    DisplayRecipe.class);
+    public static final RecipeType<DisplayRecipe> TYPE = MekanismJEI.recipeType(MEKANISM_TYPE);
 
     private static final int WIDTH = 194;
     private static final int HEIGHT = 106;
@@ -54,7 +53,7 @@ public final class SimulationChamberRecipeCategory extends BaseRecipeCategory<Di
     private final List<GuiSlot> outputGroups = new ArrayList<>(2);
 
     public SimulationChamberRecipeCategory(IGuiHelper guiHelper, ItemStack factory) {
-        super(guiHelper, TYPE,
+        super(guiHelper, MEKANISM_TYPE,
                 Component.translatable("jei.mekanicalcreate.simulation_chamber"),
                 guiHelper.createDrawableIngredient(VanillaTypes.ITEM_STACK, factory),
                 0, 0, WIDTH, HEIGHT);
@@ -74,7 +73,7 @@ public final class SimulationChamberRecipeCategory extends BaseRecipeCategory<Di
         }
 
         addSimpleProgress(ProgressType.BAR, 110, 42);
-        addElement(new GuiVerticalPowerBar(this, RecipeViewerUtils.FULL_BAR, 186, 9));
+        addElement(new GuiVerticalPowerBar(this, FULL_BAR, 186, 9));
     }
 
     @Override
@@ -166,9 +165,4 @@ public final class SimulationChamberRecipeCategory extends BaseRecipeCategory<Di
         return recipe.id();
     }
 
-    @Nullable
-    @Override
-    public Codec<DisplayRecipe> getCodec(ICodecHelper codecHelper, IRecipeManager recipeManager) {
-        return null;
-    }
 }

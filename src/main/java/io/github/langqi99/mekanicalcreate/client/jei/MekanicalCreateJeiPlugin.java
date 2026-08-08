@@ -21,20 +21,19 @@ import org.jetbrains.annotations.NotNull;
 
 @JeiPlugin
 public final class MekanicalCreateJeiPlugin implements IModPlugin {
-    private static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath(
-            MekanicalCreate.MOD_ID, "jei_plugin");
+    private static final ResourceLocation ID = new ResourceLocation(MekanicalCreate.MOD_ID, "jei_plugin");
 
     private static ItemStack chamberStack() {
-        return new ItemStack(ModBlocks.SIMULATION_CHAMBER.get());
+        return new ItemStack(ModBlocks.SIMULATION_CHAMBER.getBlock());
     }
 
     private static List<ItemStack> factoryStacks() {
         return List.of(
                 chamberStack(),
-                new ItemStack(ModBlocks.BASIC_MEKANICAL_FACTORY.get()),
-                new ItemStack(ModBlocks.ADVANCED_MEKANICAL_FACTORY.get()),
-                new ItemStack(ModBlocks.ELITE_MEKANICAL_FACTORY.get()),
-                new ItemStack(ModBlocks.ULTIMATE_MEKANICAL_FACTORY.get())
+                new ItemStack(ModBlocks.BASIC_MEKANICAL_FACTORY.getBlock()),
+                new ItemStack(ModBlocks.ADVANCED_MEKANICAL_FACTORY.getBlock()),
+                new ItemStack(ModBlocks.ELITE_MEKANICAL_FACTORY.getBlock()),
+                new ItemStack(ModBlocks.ULTIMATE_MEKANICAL_FACTORY.getBlock())
         );
     }
 

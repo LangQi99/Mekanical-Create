@@ -42,7 +42,7 @@ abstract class AbstractSimulationChamberScreen<TILE extends SimulationChamberBlo
     @Override
     protected void drawForegroundText(@NotNull GuiGraphics graphics, int mouseX, int mouseY) {
         renderTitleText(graphics);
-        renderInventoryText(graphics);
+        drawString(graphics, playerInventoryTitle, inventoryLabelX, inventoryLabelY, titleTextColor());
         super.drawForegroundText(graphics, mouseX, mouseY);
     }
 }

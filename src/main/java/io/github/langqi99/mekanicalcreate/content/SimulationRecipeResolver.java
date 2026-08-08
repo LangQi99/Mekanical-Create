@@ -31,13 +31,14 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.TransientCraftingContainer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.AbstractCookingRecipe;
-import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
-import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.ShapedRecipe;
@@ -51,6 +52,17 @@ import org.jetbrains.annotations.Nullable;
  */
 public final class SimulationRecipeResolver {
     private static final int DEFAULT_DURATION = 100;
+    private static final AbstractContainerMenu CRAFTING_MENU = new AbstractContainerMenu(null, -1) {
+        @Override
+        public ItemStack quickMoveStack(Player player, int index) {
+            return ItemStack.EMPTY;
+        }
+
+        @Override
+        public boolean stillValid(Player player) {
+            return false;
+        }
+    };
 
     private SimulationRecipeResolver() {
     }
@@ -110,7 +122,7 @@ public final class SimulationRecipeResolver {
             variant += "_" + conditionId.getNamespace() + "_" + conditionId.getPath().replace('/', '_');
         }
         for (Candidate candidate : candidates) {
-            ResourceLocation displayId = ResourceLocation.fromNamespaceAndPath(candidate.id.getNamespace(),
+            ResourceLocation displayId = new ResourceLocation(candidate.id.getNamespace(),
                     candidate.id.getPath() + "/" + variant);
             List<DisplayInput> inputs = mergeDisplayInputs(candidate.requirements);
             target.add(new DisplayRecipe(displayId,
@@ -158,7 +170,7 @@ public final class SimulationRecipeResolver {
             boolean found = false;
             for (int index = 0; index < secondItems.length; index++) {
                 if (!matched[index]
-                        && ItemStack.isSameItemSameComponents(firstItem, secondItems[index])) {
+                        && ItemStack.isSameItemSameTags(firstItem, secondItems[index])) {
                     matched[index] = true;
                     found = true;
                     break;
@@ -208,21 +220,19 @@ public final class SimulationRecipeResolver {
         } else if (module.is(AllBlocks.MECHANICAL_CRAFTER.asItem())) {
             addCrafting(candidates, recipes.getAllRecipesFor(net.minecraft.world.item.crafting.RecipeType.CRAFTING),
                     "crafting", 10, level);
-            RecipeType<CraftingRecipe> type = AllRecipeTypes.MECHANICAL_CRAFTING.getType();
-            addCrafting(candidates, recipes.getAllRecipesFor(type),
+            addCrafting(candidates, recipes.getAllRecipesFor(AllRecipeTypes.MECHANICAL_CRAFTING.getType()),
                     "mechanical_crafting", 20, level);
         }
         return candidates;
     }
 
-    private static <R extends ProcessingRecipe<?, ?>> void addProcessing(
-            List<Candidate> target, List<RecipeHolder<R>> recipes, String suffix,
+    private static <R extends ProcessingRecipe<?>> void addProcessing(
+            List<Candidate> target, List<R> recipes, String suffix,
             int priority, boolean deployer) {
-        for (RecipeHolder<R> holder : recipes) {
-            if (!AllRecipeTypes.CAN_BE_AUTOMATED.test(holder)) {
+        for (R recipe : recipes) {
+            if (!AllRecipeTypes.CAN_BE_AUTOMATED.test(recipe)) {
                 continue;
             }
-            R recipe = holder.value();
             List<Requirement> requirements = new ArrayList<>();
             for (int index = 0; index < recipe.getIngredients().size(); index++) {
                 Ingredient ingredient = recipe.getIngredients().get(index);
@@ -239,18 +249,16 @@ public final class SimulationRecipeResolver {
             }
             int duration = recipe.getProcessingDuration() > 0
                     ? Math.max(20, recipe.getProcessingDuration()) : DEFAULT_DURATION;
-            target.add(new Candidate(derivedId(holder.id(), suffix), suffix, requirements,
+            target.add(new Candidate(derivedId(recipe.getId(), suffix), suffix, requirements,
                     displayOutputs(recipe.getRollableResults(), false), 0, 1,
                     1, priority, duration,
-                    (level, match) -> appendRemainders(recipe.rollResults(level.random), match)));
+                    (level, match) -> appendRemainders(recipe.rollResults(), match)));
         }
     }
 
     private static void addSequenced(List<Candidate> target, RecipeManager manager, ModuleKind selectedModule) {
         RecipeType<SequencedAssemblyRecipe> type = AllRecipeTypes.SEQUENCED_ASSEMBLY.getType();
-        for (RecipeHolder<SequencedAssemblyRecipe> holder
-                : manager.getAllRecipesFor(type)) {
-            SequencedAssemblyRecipe recipe = holder.value();
+        for (SequencedAssemblyRecipe recipe : manager.getAllRecipesFor(type)) {
             if (recipe.getSequence().isEmpty() || recipe.resultPool.isEmpty()) {
                 continue;
             }
@@ -260,7 +268,7 @@ public final class SimulationRecipeResolver {
             boolean supported = true;
             int loops = Math.max(1, recipe.getLoops());
             for (SequencedRecipe<?> step : recipe.getSequence()) {
-                ProcessingRecipe<?, ?> processing = step.getRecipe();
+                ProcessingRecipe<?> processing = step.getRecipe();
                 if (processing instanceof DeployerApplicationRecipe deployer) {
                     containsSelectedModule |= selectedModule == ModuleKind.DEPLOYER;
                     if (deployer.getIngredients().size() < 2) {
@@ -282,7 +290,7 @@ public final class SimulationRecipeResolver {
             if (!supported || !containsSelectedModule) {
                 continue;
             }
-            target.add(new Candidate(derivedId(holder.id(), "sequenced_assembly"), "sequenced_assembly",
+            target.add(new Candidate(derivedId(recipe.getId(), "sequenced_assembly"), "sequenced_assembly",
                     requirements, displayOutputs(recipe.resultPool, true), recipe.getSequence().size(), loops,
                     recipe.getSequence().size() * loops, 100, DEFAULT_DURATION,
                     (level, match) -> appendRemainders(
@@ -310,30 +318,30 @@ public final class SimulationRecipeResolver {
         }
     }
 
-    private static <R extends ProcessingRecipe<?, ?>> void addFanProcessing(
-            List<Candidate> target, List<RecipeHolder<R>> recipes, String suffix, FanProcessingType type) {
-        for (RecipeHolder<R> holder : recipes) {
-            if (!AllRecipeTypes.CAN_BE_AUTOMATED.test(holder) || holder.value().getIngredients().isEmpty()) {
+    private static <R extends ProcessingRecipe<?>> void addFanProcessing(
+            List<Candidate> target, List<R> recipes, String suffix, FanProcessingType type) {
+        for (R recipe : recipes) {
+            if (!AllRecipeTypes.CAN_BE_AUTOMATED.test(recipe) || recipe.getIngredients().isEmpty()) {
                 continue;
             }
-            target.add(new Candidate(derivedId(holder.id(), suffix), suffix,
-                    List.of(new Requirement(holder.value().getIngredients().getFirst(), 1, true, 0)),
-                    displayOutputs(holder.value().getRollableResults(), false), 0, 1,
+            target.add(new Candidate(derivedId(recipe.getId(), suffix), suffix,
+                    List.of(new Requirement(recipe.getIngredients().get(0), 1, true, 0)),
+                    displayOutputs(recipe.getRollableResults(), false), 0, 1,
                     1, 20, DEFAULT_DURATION,
                     (level, match) -> fanResults(type, level, match)));
         }
     }
 
     private static <R extends AbstractCookingRecipe> void addFanCooking(
-            List<Candidate> target, List<RecipeHolder<R>> recipes, String suffix,
+            List<Candidate> target, List<R> recipes, String suffix,
             FanProcessingType type, int priority) {
-        for (RecipeHolder<R> holder : recipes) {
-            if (!AllRecipeTypes.CAN_BE_AUTOMATED.test(holder) || holder.value().getIngredients().isEmpty()) {
+        for (R recipe : recipes) {
+            if (!AllRecipeTypes.CAN_BE_AUTOMATED.test(recipe) || recipe.getIngredients().isEmpty()) {
                 continue;
             }
-            ItemStack output = holder.value().getResultItem(net.minecraft.core.RegistryAccess.EMPTY);
-            target.add(new Candidate(derivedId(holder.id(), suffix), suffix,
-                    List.of(new Requirement(holder.value().getIngredients().getFirst(), 1, true, 0)),
+            ItemStack output = recipe.getResultItem(net.minecraft.core.RegistryAccess.EMPTY);
+            target.add(new Candidate(derivedId(recipe.getId(), suffix), suffix,
+                    List.of(new Requirement(recipe.getIngredients().get(0), 1, true, 0)),
                     output.isEmpty() ? List.of() : List.of(new DisplayOutput(output, 1)), 0, 1,
                     1, priority, DEFAULT_DURATION,
                     (level, match) -> fanResults(type, level, match)));
@@ -346,13 +354,12 @@ public final class SimulationRecipeResolver {
         return results == null ? List.of() : appendRemainders(results, match);
     }
 
-    private static <R extends CraftingRecipe> void addCrafting(
-            List<Candidate> target, List<RecipeHolder<R>> recipes, String suffix, int priority, Level level) {
-        for (RecipeHolder<R> holder : recipes) {
-            if (AllRecipeTypes.shouldIgnoreInAutomation(holder)) {
+    private static void addCrafting(
+            List<Candidate> target, List<? extends CraftingRecipe> recipes, String suffix, int priority, Level level) {
+        for (CraftingRecipe recipe : recipes) {
+            if (AllRecipeTypes.shouldIgnoreInAutomation(recipe)) {
                 continue;
             }
-            R recipe = holder.value();
             NonNullList<Ingredient> ingredients = recipe.getIngredients();
             List<Requirement> requirements = new ArrayList<>();
             for (int position = 0; position < ingredients.size(); position++) {
@@ -365,7 +372,7 @@ public final class SimulationRecipeResolver {
                 continue;
             }
             ItemStack output = recipe.getResultItem(level.registryAccess());
-            target.add(new Candidate(derivedId(holder.id(), suffix), suffix, requirements,
+            target.add(new Candidate(derivedId(recipe.getId(), suffix), suffix, requirements,
                     output.isEmpty() ? List.of() : List.of(new DisplayOutput(output, 1)), 0, 1,
                     requirements.size(), priority, DEFAULT_DURATION,
                     (recipeLevel, match) -> craft(recipe, ingredients.size(), recipeLevel, match)));
@@ -399,17 +406,14 @@ public final class SimulationRecipeResolver {
             height = Math.max(1, (ingredientSlots + width - 1) / width);
         }
         int gridSize = Math.max(ingredientSlots, width * height);
-        List<ItemStack> grid = new ArrayList<>(gridSize);
-        for (int i = 0; i < gridSize; i++) {
-            grid.add(ItemStack.EMPTY);
-        }
+        NonNullList<ItemStack> grid = NonNullList.withSize(gridSize, ItemStack.EMPTY);
         for (int requirement = 0; requirement < match.candidate.requirements.size(); requirement++) {
             int position = match.candidate.requirements.get(requirement).craftPosition;
             if (position >= 0 && position < grid.size()) {
                 grid.set(position, match.assignedByRequirement.get(requirement).copyWithCount(1));
             }
         }
-        CraftingInput input = CraftingInput.of(width, height, grid);
+        TransientCraftingContainer input = new TransientCraftingContainer(CRAFTING_MENU, width, height, grid);
         List<ItemStack> results = new ArrayList<>();
         ItemStack result = recipe.assemble(input, level.registryAccess());
         if (!result.isEmpty()) {
@@ -569,7 +573,7 @@ public final class SimulationRecipeResolver {
 
     private static void addStacked(List<ItemStack> stacks, ItemStack toAdd) {
         for (ItemStack stack : stacks) {
-            if (ItemStack.isSameItemSameComponents(stack, toAdd)
+            if (ItemStack.isSameItemSameTags(stack, toAdd)
                     && stack.getCount() + toAdd.getCount() <= stack.getMaxStackSize()) {
                 stack.grow(toAdd.getCount());
                 return;
@@ -590,11 +594,11 @@ public final class SimulationRecipeResolver {
                 return output.getStack().copy();
             }
         }
-        return pool.getLast().getStack().copy();
+        return pool.get(pool.size() - 1).getStack().copy();
     }
 
     private static ResourceLocation derivedId(ResourceLocation source, String suffix) {
-        return ResourceLocation.fromNamespaceAndPath(source.getNamespace(),
+        return new ResourceLocation(source.getNamespace(),
                 source.getPath() + "/mekanicalcreate_" + suffix);
     }
 
@@ -630,13 +634,13 @@ public final class SimulationRecipeResolver {
             for (StackUse use : stackUses) {
                 ItemStack current = slots.get(use.slot).getStack();
                 if (current.getCount() < use.count
-                        || !ItemStack.isSameItemSameComponents(current, use.expected)) {
+                        || !ItemStack.isSameItemSameTags(current, use.expected)) {
                     return false;
                 }
             }
             for (CatalystUse use : catalystUses) {
                 ItemStack current = slots.get(use.slot).getStack();
-                if (current.isEmpty() || !ItemStack.isSameItemSameComponents(current, use.expected)) {
+                if (current.isEmpty() || !ItemStack.isSameItemSameTags(current, use.expected)) {
                     return false;
                 }
             }

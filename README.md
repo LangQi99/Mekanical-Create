@@ -4,8 +4,8 @@
 
 **把机械动力的物理产线，装进 Mekanism 风格的通用工厂。**
 
-[![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-62B47A?style=for-the-badge)](#运行环境)
-[![NeoForge](https://img.shields.io/badge/NeoForge-21.1.x-EF6C61?style=for-the-badge)](#运行环境)
+[![Minecraft](https://img.shields.io/badge/Minecraft-1.20.1-62B47A?style=for-the-badge)](#运行环境)
+[![Forge](https://img.shields.io/badge/Forge-47.x-EF6C61?style=for-the-badge)](#运行环境)
 [![Release](https://img.shields.io/github/v/release/LangQi99/Mekanical-Create?style=for-the-badge&label=Release)](https://github.com/LangQi99/Mekanical-Create/releases/latest)
 [![License](https://img.shields.io/github/license/LangQi99/Mekanical-Create?style=for-the-badge)](LICENSE)
 
@@ -19,7 +19,9 @@
 
 ## 这是什么？
 
-**Mekanical Create（通用动力）** 是一个连接 [Create（机械动力）](https://github.com/Creators-of-Create/Create) 与 [Mekanism（通用机械）](https://github.com/mekanism/Mekanism) 的 NeoForge 附属模组。
+**Mekanical Create（通用动力）** 是一个连接 [Create（机械动力）](https://github.com/Creators-of-Create/Create) 与 [Mekanism（通用机械）](https://github.com/mekanism/Mekanism) 的 Forge 附属模组。
+
+> 当前分支面向 **Minecraft 1.20.1 + Forge**；Minecraft 1.21.1 + NeoForge 版本请查看 `main` 分支。
 
 它提供一套 Mekanism 风格的 **通用动力工厂**：把机械手、动力锯、动力冲压机、鼓风机等机械动力设备作为“加工模块”放入机器，即可使用统一的输入、输出、供能、升级和侧面配置系统完成对应配方。
 
@@ -106,18 +108,18 @@ Create 的序列组装会被展开成工厂中的一次完整操作：
 
 | 依赖 | 版本 |
 | --- | --- |
-| Minecraft | 1.21.1 |
-| NeoForge | 21.1.244 或更高的 21.1.x 版本 |
-| Create | 6.0.10 |
-| Mekanism | 10.7.19 |
-| JEI | 19.x |
-| Java | 21 |
+| Minecraft | 1.20.1 |
+| Forge | 47.1.33 或更高的 47.x 版本 |
+| Create | 6.0.8 |
+| Mekanism | 10.4.16.80 |
+| JEI | 15.20.x（可选，但推荐安装） |
+| Java | 17 |
 
 ## 安装
 
-1. 安装 Minecraft 1.21.1 与对应版本的 NeoForge。
+1. 安装 Minecraft 1.20.1 与 Forge 47.x。
 2. 安装 Create、Mekanism 和 JEI。
-3. 从 [Releases](https://github.com/LangQi99/Mekanical-Create/releases/latest) 下载最新的 `mekanicalcreate-*.jar`。
+3. 从 [Releases](https://github.com/LangQi99/Mekanical-Create/releases) 下载文件名带有 `mc1.20.1` 的 `mekanicalcreate-*.jar`。
 4. 将 JAR 放入游戏实例的 `mods` 文件夹后启动游戏。
 
 ## 开发构建

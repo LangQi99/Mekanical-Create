@@ -11,6 +11,8 @@ import mekanism.api.IContentsListener;
 import mekanism.api.RelativeSide;
 import mekanism.api.energy.IEnergyContainer;
 import mekanism.api.inventory.IInventorySlot;
+import mekanism.api.math.FloatingLong;
+import mekanism.api.providers.IBlockProvider;
 import mekanism.api.tier.BaseTier;
 import mekanism.common.block.attribute.Attribute;
 import mekanism.common.capabilities.energy.MachineEnergyContainer;
@@ -30,6 +32,7 @@ import mekanism.common.lib.transmitter.TransmissionType;
 import mekanism.common.registries.MekanismSounds;
 import mekanism.common.tile.component.TileComponentEjector;
 import mekanism.common.tile.component.ITileComponent;
+import mekanism.common.tile.component.TileComponentConfig;
 import mekanism.common.tile.component.config.ConfigInfo;
 import mekanism.common.tile.component.config.DataType;
 import mekanism.common.tile.component.config.slot.InventorySlotInfo;
@@ -38,17 +41,14 @@ import mekanism.common.util.MekanismUtils;
 import mekanism.common.upgrade.IUpgradeData;
 import mekanism.common.upgrade.MachineUpgradeData;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Holder;
-import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
-import net.neoforged.neoforge.items.ItemHandlerHelper;
-import net.neoforged.neoforge.items.ItemStackHandler;
+import net.minecraftforge.items.ItemHandlerHelper;
+import net.minecraftforge.items.ItemStackHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -76,9 +76,10 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         this(ModBlocks.SIMULATION_CHAMBER, pos, state);
     }
 
-    public SimulationChamberBlockEntity(Holder<Block> blockProvider, BlockPos pos, BlockState state) {
+    public SimulationChamberBlockEntity(IBlockProvider blockProvider, BlockPos pos, BlockState state) {
         super(blockProvider, pos, state);
 
+        configComponent = new TileComponentConfig(this, TransmissionType.ITEM, TransmissionType.ENERGY);
         configComponent.setupItemIOConfig(List.copyOf(inputSlots), List.copyOf(outputSlots), energySlot, false);
         ConfigInfo itemConfig = configComponent.getConfig(TransmissionType.ITEM);
         if (itemConfig != null) {
@@ -102,20 +103,20 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         ejectorComponent.setOutputData(configComponent, TransmissionType.ITEM);
     }
 
-    public static long getBaseEnergyCapacity() {
+    public static FloatingLong getBaseEnergyCapacity() {
         return getBaseEnergyCapacity(null);
     }
 
-    public static long getBaseEnergyUsage() {
+    public static FloatingLong getBaseEnergyUsage() {
         return getBaseEnergyUsage(null);
     }
 
-    public static long getBaseEnergyCapacity(@Nullable BaseTier tier) {
-        return BASE_ENERGY_CAPACITY * getTierMultiplier(tier);
+    public static FloatingLong getBaseEnergyCapacity(@Nullable BaseTier tier) {
+        return FloatingLong.create(BASE_ENERGY_CAPACITY * getTierMultiplier(tier));
     }
 
-    public static long getBaseEnergyUsage(@Nullable BaseTier tier) {
-        return BASE_ENERGY_USAGE * getTierMultiplier(tier);
+    public static FloatingLong getBaseEnergyUsage(@Nullable BaseTier tier) {
+        return FloatingLong.create(BASE_ENERGY_USAGE * getTierMultiplier(tier));
     }
 
     private static long getTierMultiplier(@Nullable BaseTier tier) {
@@ -133,7 +134,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     @NotNull
     @Override
     protected IEnergyContainerHolder getInitialEnergyContainers(IContentsListener listener) {
-        EnergyContainerHelper builder = EnergyContainerHelper.forSideWithConfig(this);
+        EnergyContainerHelper builder = EnergyContainerHelper.forSideWithConfig(this::getDirection, this::getConfig);
         builder.addContainer(energyContainer = MachineEnergyContainer.input(this, listener));
         return builder.build();
     }
@@ -153,9 +154,13 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             planDirty = true;
         };
 
-        InventorySlotHelper builder = InventorySlotHelper.forSideWithConfig(this);
-        moduleSlot = builder.addSlot(BasicInventorySlot.at(
-                SimulationChamberBlockEntity::isSupportedModule, configurationListener, 25, 24, 1));
+        InventorySlotHelper builder = InventorySlotHelper.forSideWithConfig(this::getDirection, this::getConfig);
+        moduleSlot = builder.addSlot(new BasicInventorySlot(1,
+                BasicInventorySlot.alwaysTrueBi,
+                BasicInventorySlot.alwaysTrueBi,
+                SimulationChamberBlockEntity::isSupportedModule,
+                configurationListener, 25, 24) {
+        });
         conditionSlot = builder.addSlot(new BasicInventorySlot(1,
                 (stack, automation) -> true,
                 (stack, automation) -> isFanModuleInstalled(),
@@ -189,14 +194,14 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     }
 
     @Override
-    protected boolean onUpdateServer() {
-        boolean sendUpdatePacket = super.onUpdateServer();
+    protected void onUpdateServer() {
+        super.onUpdateServer();
         energySlot.fillContainerOrConvert();
 
         Level level = getLevel();
-        if (level == null || !canFunction()) {
+        if (level == null || !MekanismUtils.canFunction(this)) {
             setActive(false);
-            return sendUpdatePacket;
+            return;
         }
 
         if (activePlan != null && planDirty) {
@@ -212,7 +217,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                     level, moduleSlot.getStack(), conditionSlot.getStack(), inputSlots).orElse(null);
             if (activePlan == null) {
                 resetIdle();
-                return sendUpdatePacket;
+                return;
             }
             progress = 0;
             duration = MekanismUtils.getTicks(this, getTierDuration(activePlan.duration()));
@@ -221,13 +226,13 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
 
         if (!canFit(activePlan.results())) {
             setActive(false);
-            return sendUpdatePacket;
+            return;
         }
 
-        long energyPerTick = energyContainer.getEnergyPerTick();
-        if (energyContainer.extract(energyPerTick, Action.SIMULATE, AutomationType.INTERNAL) != energyPerTick) {
+        FloatingLong energyPerTick = energyContainer.getEnergyPerTick();
+        if (energyContainer.extract(energyPerTick, Action.SIMULATE, AutomationType.INTERNAL).smallerThan(energyPerTick)) {
             setActive(false);
-            return sendUpdatePacket;
+            return;
         }
 
         energyContainer.extract(energyPerTick, Action.EXECUTE, AutomationType.INTERNAL);
@@ -237,7 +242,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             if (!activePlan.stillValid(inputSlots) || !canFit(activePlan.results())) {
                 invalidatePlan();
                 setActive(false);
-                return sendUpdatePacket;
+                return;
             }
             activePlan.consume(inputSlots);
             insertResults(activePlan.results());
@@ -247,7 +252,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             planDirty = true;
         }
         markForSave();
-        return sendUpdatePacket;
     }
 
     private void insertResults(List<ItemStack> results) {
@@ -297,7 +301,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     }
 
     private int getTierDuration(int baseDuration) {
-        BaseTier tier = Attribute.getBaseTier(getBlockHolder());
+        BaseTier tier = Attribute.getBaseTier(getBlockType());
         double multiplier = tier == null ? 1.0 : switch (tier) {
             case BASIC -> 0.75;
             case ADVANCED -> 0.5;
@@ -332,7 +336,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     }
 
     public boolean isEnergyStarved() {
-        return progress > 0 && energyContainer.getEnergy() < energyContainer.getEnergyPerTick();
+        return progress > 0 && energyContainer.getEnergy().smallerThan(energyContainer.getEnergyPerTick());
     }
 
     @Override
@@ -343,15 +347,15 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     }
 
     @Override
-    public void saveAdditional(CompoundTag tag, HolderLookup.Provider provider) {
-        super.saveAdditional(tag, provider);
+    public void saveAdditional(CompoundTag tag) {
+        super.saveAdditional(tag);
         tag.putInt("Progress", progress);
         tag.putInt("Duration", duration);
     }
 
     @Override
-    public void loadAdditional(CompoundTag tag, HolderLookup.Provider provider) {
-        super.loadAdditional(tag, provider);
+    public void load(CompoundTag tag) {
+        super.load(tag);
         // Active plans are deliberately ephemeral. Re-resolve after a reload so a
         // datapack recipe change can never finish an old operation.
         progress = 0;
@@ -362,40 +366,38 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
 
     @NotNull
     @Override
-    public MachineUpgradeData getUpgradeData(HolderLookup.Provider provider) {
+    public MachineUpgradeData getUpgradeData() {
         List<IInventorySlot> storedInputs = new ArrayList<>(INPUT_COUNT + 2);
         storedInputs.add(moduleSlot);
         storedInputs.add(conditionSlot);
         storedInputs.addAll(inputSlots);
         List<IInventorySlot> storedOutputs = new ArrayList<>(outputSlots);
-        return new MachineUpgradeData(provider, redstone, getControlType(), energyContainer,
+        return new MachineUpgradeData(redstone, getControlType(), energyContainer,
                 new int[]{progress}, energySlot, storedInputs, storedOutputs, false, getComponents());
     }
 
     @Override
-    public void parseUpgradeData(HolderLookup.Provider provider, @NotNull IUpgradeData upgradeData) {
+    public void parseUpgradeData(@NotNull IUpgradeData upgradeData) {
         if (!(upgradeData instanceof MachineUpgradeData data)
                 || data.inputSlots.size() != INPUT_COUNT + 2
                 || data.outputSlots.size() != OUTPUT_COUNT) {
-            super.parseUpgradeData(provider, upgradeData);
+            super.parseUpgradeData(upgradeData);
             return;
         }
         redstone = data.redstone;
         setControlType(data.controlType);
         energyContainer.setEnergy(data.energyContainer.getEnergy());
-        energySlot.deserializeNBT(provider, data.energySlot.serializeNBT(provider));
-        moduleSlot.deserializeNBT(provider, data.inputSlots.get(0).serializeNBT(provider));
-        conditionSlot.deserializeNBT(provider, data.inputSlots.get(1).serializeNBT(provider));
+        energySlot.deserializeNBT(data.energySlot.serializeNBT());
+        moduleSlot.deserializeNBT(data.inputSlots.get(0).serializeNBT());
+        conditionSlot.deserializeNBT(data.inputSlots.get(1).serializeNBT());
         for (int index = 0; index < INPUT_COUNT; index++) {
-            inputSlots.get(index).deserializeNBT(provider,
-                    data.inputSlots.get(index + 2).serializeNBT(provider));
+            inputSlots.get(index).deserializeNBT(data.inputSlots.get(index + 2).serializeNBT());
         }
         for (int index = 0; index < OUTPUT_COUNT; index++) {
-            outputSlots.get(index).deserializeNBT(provider,
-                    data.outputSlots.get(index).serializeNBT(provider));
+            outputSlots.get(index).deserializeNBT(data.outputSlots.get(index).serializeNBT());
         }
         for (ITileComponent component : getComponents()) {
-            component.read(data.components, provider);
+            component.read(data.components);
         }
         progress = 0;
         duration = DEFAULT_DURATION;

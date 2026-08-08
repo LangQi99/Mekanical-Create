@@ -1,8 +1,12 @@
 {
   "variants": {
-    "facing=north": { "model": "mekanicalcreate:block/basic_mekanical_factory" },
-    "facing=east": { "model": "mekanicalcreate:block/basic_mekanical_factory", "y": 90 },
-    "facing=south": { "model": "mekanicalcreate:block/basic_mekanical_factory", "y": 180 },
-    "facing=west": { "model": "mekanicalcreate:block/basic_mekanical_factory", "y": 270 }
+    "active=false,facing=north": { "model": "mekanicalcreate:block/basic_mekanical_factory" },
+    "active=true,facing=north":  { "model": "mekanicalcreate:block/basic_mekanical_factory" },
+    "active=false,facing=east":  { "model": "mekanicalcreate:block/basic_mekanical_factory", "y": 90 },
+    "active=true,facing=east":   { "model": "mekanicalcreate:block/basic_mekanical_factory", "y": 90 },
+    "active=false,facing=south": { "model": "mekanicalcreate:block/basic_mekanical_factory", "y": 180 },
+    "active=true,facing=south":  { "model": "mekanicalcreate:block/basic_mekanical_factory", "y": 180 },
+    "active=false,facing=west":  { "model": "mekanicalcreate:block/basic_mekanical_factory", "y": 270 },
+    "active=true,facing=west":   { "model": "mekanicalcreate:block/basic_mekanical_factory", "y": 270 }
   }
 }

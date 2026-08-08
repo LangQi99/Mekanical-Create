@@ -2,18 +2,19 @@ package io.github.langqi99.mekanicalcreate.client;
 
 import io.github.langqi99.mekanicalcreate.MekanicalCreate;
 import io.github.langqi99.mekanicalcreate.registry.ModMenus;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraft.client.gui.screens.MenuScreens;
 
-@Mod(value = MekanicalCreate.MOD_ID, dist = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = MekanicalCreate.MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class MekanicalCreateClient {
-    public MekanicalCreateClient(IEventBus modBus) {
-        modBus.addListener(this::registerScreens);
+    private MekanicalCreateClient() {
     }
 
-    private void registerScreens(RegisterMenuScreensEvent event) {
-        event.register(ModMenus.SIMULATION_CHAMBER.get(), SimulationChamberScreen::new);
+    @SubscribeEvent
+    public static void registerScreens(FMLClientSetupEvent event) {
+        event.enqueueWork(() -> MenuScreens.register(ModMenus.SIMULATION_CHAMBER.get(), SimulationChamberScreen::new));
     }
 }

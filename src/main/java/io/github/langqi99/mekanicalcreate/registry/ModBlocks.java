@@ -4,148 +4,129 @@ import io.github.langqi99.mekanicalcreate.MekanicalCreate;
 import io.github.langqi99.mekanicalcreate.ModLang;
 import io.github.langqi99.mekanicalcreate.content.SimulationChamberBlockEntity;
 import io.github.langqi99.mekanicalcreate.content.ModBlockShapes;
+import java.util.EnumSet;
+import mekanism.api.Upgrade;
 import mekanism.api.tier.BaseTier;
-import mekanism.common.attachments.component.AttachedEjector;
-import mekanism.common.attachments.component.AttachedSideConfig;
-import mekanism.common.attachments.containers.ContainerType;
-import mekanism.common.attachments.containers.item.ItemSlotsBuilder;
+import mekanism.common.block.attribute.AttributeStateFacing;
 import mekanism.common.block.attribute.AttributeTier;
 import mekanism.common.block.attribute.AttributeUpgradeable;
-import mekanism.common.block.attribute.AttributeUpgradeSupport;
+import mekanism.common.block.attribute.Attributes;
 import mekanism.common.block.prefab.BlockTile;
-import mekanism.common.content.blocktype.Machine;
-import mekanism.common.content.blocktype.Machine.MachineBuilder;
-import mekanism.common.item.block.ItemBlockTooltip;
-import mekanism.common.lib.transmitter.TransmissionType;
+import mekanism.common.content.blocktype.BlockTypeTile;
+import mekanism.common.content.blocktype.BlockTypeTile.BlockTileBuilder;
+import mekanism.common.item.block.machine.ItemBlockMachine;
 import mekanism.common.registration.impl.BlockDeferredRegister;
 import mekanism.common.registration.impl.BlockRegistryObject;
-import mekanism.common.registration.impl.ItemRegistryObject;
-import mekanism.common.registries.MekanismDataComponents;
 import mekanism.common.registries.MekanismSounds;
 import mekanism.common.tier.FactoryTier;
 import net.minecraft.world.level.material.MapColor;
-import net.neoforged.bus.api.IEventBus;
+import net.minecraftforge.eventbus.api.IEventBus;
 
 public final class ModBlocks {
     private static final BlockDeferredRegister BLOCKS = new BlockDeferredRegister(MekanicalCreate.MOD_ID);
 
-    public static final Machine<SimulationChamberBlockEntity> SIMULATION_CHAMBER_TYPE = MachineBuilder
-            .createMachine(() -> ModBlockEntities.SIMULATION_CHAMBER, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
+    public static final BlockTypeTile<SimulationChamberBlockEntity> SIMULATION_CHAMBER_TYPE = BlockTileBuilder
+            .createBlock(() -> ModBlockEntities.SIMULATION_CHAMBER, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
             .withGui(() -> ModMenus.SIMULATION_CHAMBER)
             .withSound(MekanismSounds.ENRICHMENT_CHAMBER)
             .withEnergyConfig(() -> SimulationChamberBlockEntity.getBaseEnergyUsage(null),
                     () -> SimulationChamberBlockEntity.getBaseEnergyCapacity(null))
-            .with(AttributeUpgradeSupport.DEFAULT_MACHINE_UPGRADES,
+            .with(Attributes.ACTIVE_LIGHT, new AttributeStateFacing(), Attributes.INVENTORY,
+                    Attributes.SECURITY, Attributes.REDSTONE, Attributes.COMPARATOR,
                     new AttributeUpgradeable(() -> ModBlocks.BASIC_MEKANICAL_FACTORY))
-            .withSideConfig(TransmissionType.ITEM, TransmissionType.ENERGY)
+            .withSupportedUpgrades(EnumSet.of(Upgrade.SPEED, Upgrade.ENERGY, Upgrade.MUFFLING))
             .withCustomShape(ModBlockShapes.SIMULATION_CHAMBER)
             .build();
 
     public static final BlockRegistryObject<
-            BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>,
-            ItemBlockTooltip<BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>>> SIMULATION_CHAMBER =
+            BlockTile<SimulationChamberBlockEntity, BlockTypeTile<SimulationChamberBlockEntity>>,
+            ItemBlockMachine> SIMULATION_CHAMBER =
             BLOCKS.register("simulation_chamber",
                     () -> new BlockTile<>(SIMULATION_CHAMBER_TYPE, properties -> properties.mapColor(MapColor.METAL)),
-                    (block, properties) -> new ItemBlockTooltip<>(block, true, properties
-                            .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
-                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))
-                    .forItemHolder(holder -> addItemAttachments(holder));
+                    ItemBlockMachine::new);
 
-    public static final Machine<SimulationChamberBlockEntity> BASIC_MEKANICAL_FACTORY_TYPE = MachineBuilder
-            .createMachine(() -> ModBlockEntities.BASIC_MEKANICAL_FACTORY, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
+    public static final BlockTypeTile<SimulationChamberBlockEntity> BASIC_MEKANICAL_FACTORY_TYPE = BlockTileBuilder
+            .createBlock(() -> ModBlockEntities.BASIC_MEKANICAL_FACTORY, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
             .withGui(() -> ModMenus.SIMULATION_CHAMBER)
             .withSound(MekanismSounds.ENRICHMENT_CHAMBER)
             .withEnergyConfig(() -> SimulationChamberBlockEntity.getBaseEnergyUsage(BaseTier.BASIC),
                     () -> SimulationChamberBlockEntity.getBaseEnergyCapacity(BaseTier.BASIC))
-            .with(AttributeUpgradeSupport.DEFAULT_MACHINE_UPGRADES, new AttributeTier<>(FactoryTier.BASIC),
+            .with(Attributes.ACTIVE_LIGHT, new AttributeStateFacing(), Attributes.INVENTORY,
+                    Attributes.SECURITY, Attributes.REDSTONE, Attributes.COMPARATOR,
+                    new AttributeTier<>(FactoryTier.BASIC),
                     new AttributeUpgradeable(() -> ModBlocks.ADVANCED_MEKANICAL_FACTORY))
-            .withSideConfig(TransmissionType.ITEM, TransmissionType.ENERGY)
+            .withSupportedUpgrades(EnumSet.of(Upgrade.SPEED, Upgrade.ENERGY, Upgrade.MUFFLING))
             .withCustomShape(ModBlockShapes.SIMULATION_CHAMBER)
             .build();
 
     public static final BlockRegistryObject<
-            BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>,
-            ItemBlockTooltip<BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>>> BASIC_MEKANICAL_FACTORY =
+            BlockTile<SimulationChamberBlockEntity, BlockTypeTile<SimulationChamberBlockEntity>>,
+            ItemBlockMachine> BASIC_MEKANICAL_FACTORY =
             BLOCKS.register("basic_mekanical_factory",
                     () -> new BlockTile<>(BASIC_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
-                    (block, properties) -> new ItemBlockTooltip<>(block, true, properties
-                            .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
-                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))
-                    .forItemHolder(holder -> addItemAttachments(holder));
+                    ItemBlockMachine::new);
 
-    public static final Machine<SimulationChamberBlockEntity> ADVANCED_MEKANICAL_FACTORY_TYPE = MachineBuilder
-            .createMachine(() -> ModBlockEntities.ADVANCED_MEKANICAL_FACTORY, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
+    public static final BlockTypeTile<SimulationChamberBlockEntity> ADVANCED_MEKANICAL_FACTORY_TYPE = BlockTileBuilder
+            .createBlock(() -> ModBlockEntities.ADVANCED_MEKANICAL_FACTORY, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
             .withGui(() -> ModMenus.SIMULATION_CHAMBER)
             .withSound(MekanismSounds.ENRICHMENT_CHAMBER)
             .withEnergyConfig(() -> SimulationChamberBlockEntity.getBaseEnergyUsage(BaseTier.ADVANCED),
                     () -> SimulationChamberBlockEntity.getBaseEnergyCapacity(BaseTier.ADVANCED))
-            .with(AttributeUpgradeSupport.DEFAULT_MACHINE_UPGRADES, new AttributeTier<>(FactoryTier.ADVANCED),
+            .with(Attributes.ACTIVE_LIGHT, new AttributeStateFacing(), Attributes.INVENTORY,
+                    Attributes.SECURITY, Attributes.REDSTONE, Attributes.COMPARATOR,
+                    new AttributeTier<>(FactoryTier.ADVANCED),
                     new AttributeUpgradeable(() -> ModBlocks.ELITE_MEKANICAL_FACTORY))
-            .withSideConfig(TransmissionType.ITEM, TransmissionType.ENERGY)
+            .withSupportedUpgrades(EnumSet.of(Upgrade.SPEED, Upgrade.ENERGY, Upgrade.MUFFLING))
             .withCustomShape(ModBlockShapes.SIMULATION_CHAMBER)
             .build();
 
     public static final BlockRegistryObject<
-            BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>,
-            ItemBlockTooltip<BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>>> ADVANCED_MEKANICAL_FACTORY =
+            BlockTile<SimulationChamberBlockEntity, BlockTypeTile<SimulationChamberBlockEntity>>,
+            ItemBlockMachine> ADVANCED_MEKANICAL_FACTORY =
             BLOCKS.register("advanced_mekanical_factory",
                     () -> new BlockTile<>(ADVANCED_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
-                    (block, properties) -> new ItemBlockTooltip<>(block, true, properties
-                            .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
-                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))
-                    .forItemHolder(holder -> addItemAttachments(holder));
+                    ItemBlockMachine::new);
 
-    public static final Machine<SimulationChamberBlockEntity> ELITE_MEKANICAL_FACTORY_TYPE = MachineBuilder
-            .createMachine(() -> ModBlockEntities.ELITE_MEKANICAL_FACTORY, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
+    public static final BlockTypeTile<SimulationChamberBlockEntity> ELITE_MEKANICAL_FACTORY_TYPE = BlockTileBuilder
+            .createBlock(() -> ModBlockEntities.ELITE_MEKANICAL_FACTORY, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
             .withGui(() -> ModMenus.SIMULATION_CHAMBER)
             .withSound(MekanismSounds.ENRICHMENT_CHAMBER)
             .withEnergyConfig(() -> SimulationChamberBlockEntity.getBaseEnergyUsage(BaseTier.ELITE),
                     () -> SimulationChamberBlockEntity.getBaseEnergyCapacity(BaseTier.ELITE))
-            .with(AttributeUpgradeSupport.DEFAULT_MACHINE_UPGRADES, new AttributeTier<>(FactoryTier.ELITE),
+            .with(Attributes.ACTIVE_LIGHT, new AttributeStateFacing(), Attributes.INVENTORY,
+                    Attributes.SECURITY, Attributes.REDSTONE, Attributes.COMPARATOR,
+                    new AttributeTier<>(FactoryTier.ELITE),
                     new AttributeUpgradeable(() -> ModBlocks.ULTIMATE_MEKANICAL_FACTORY))
-            .withSideConfig(TransmissionType.ITEM, TransmissionType.ENERGY)
+            .withSupportedUpgrades(EnumSet.of(Upgrade.SPEED, Upgrade.ENERGY, Upgrade.MUFFLING))
             .withCustomShape(ModBlockShapes.SIMULATION_CHAMBER)
             .build();
 
     public static final BlockRegistryObject<
-            BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>,
-            ItemBlockTooltip<BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>>> ELITE_MEKANICAL_FACTORY =
+            BlockTile<SimulationChamberBlockEntity, BlockTypeTile<SimulationChamberBlockEntity>>,
+            ItemBlockMachine> ELITE_MEKANICAL_FACTORY =
             BLOCKS.register("elite_mekanical_factory",
                     () -> new BlockTile<>(ELITE_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
-                    (block, properties) -> new ItemBlockTooltip<>(block, true, properties
-                            .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
-                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))
-                    .forItemHolder(holder -> addItemAttachments(holder));
+                    ItemBlockMachine::new);
 
-    public static final Machine<SimulationChamberBlockEntity> ULTIMATE_MEKANICAL_FACTORY_TYPE = MachineBuilder
-            .createMachine(() -> ModBlockEntities.ULTIMATE_MEKANICAL_FACTORY, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
+    public static final BlockTypeTile<SimulationChamberBlockEntity> ULTIMATE_MEKANICAL_FACTORY_TYPE = BlockTileBuilder
+            .createBlock(() -> ModBlockEntities.ULTIMATE_MEKANICAL_FACTORY, ModLang.DESCRIPTION_SIMULATION_CHAMBER)
             .withGui(() -> ModMenus.SIMULATION_CHAMBER)
             .withSound(MekanismSounds.ENRICHMENT_CHAMBER)
             .withEnergyConfig(() -> SimulationChamberBlockEntity.getBaseEnergyUsage(BaseTier.ULTIMATE),
                     () -> SimulationChamberBlockEntity.getBaseEnergyCapacity(BaseTier.ULTIMATE))
-            .with(AttributeUpgradeSupport.DEFAULT_MACHINE_UPGRADES, new AttributeTier<>(FactoryTier.ULTIMATE))
-            .withSideConfig(TransmissionType.ITEM, TransmissionType.ENERGY)
+            .with(Attributes.ACTIVE_LIGHT, new AttributeStateFacing(), Attributes.INVENTORY,
+                    Attributes.SECURITY, Attributes.REDSTONE, Attributes.COMPARATOR,
+                    new AttributeTier<>(FactoryTier.ULTIMATE))
+            .withSupportedUpgrades(EnumSet.of(Upgrade.SPEED, Upgrade.ENERGY, Upgrade.MUFFLING))
             .withCustomShape(ModBlockShapes.SIMULATION_CHAMBER)
             .build();
 
     public static final BlockRegistryObject<
-            BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>,
-            ItemBlockTooltip<BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>>> ULTIMATE_MEKANICAL_FACTORY =
+            BlockTile<SimulationChamberBlockEntity, BlockTypeTile<SimulationChamberBlockEntity>>,
+            ItemBlockMachine> ULTIMATE_MEKANICAL_FACTORY =
             BLOCKS.register("ultimate_mekanical_factory",
                     () -> new BlockTile<>(ULTIMATE_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
-                    (block, properties) -> new ItemBlockTooltip<>(block, true, properties
-                            .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
-                            .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))
-                    .forItemHolder(holder -> addItemAttachments(holder));
-
-    private static void addItemAttachments(ItemRegistryObject<? extends ItemBlockTooltip<?>> holder) {
-        holder.addAttachmentOnlyContainers(ContainerType.ITEM, () -> ItemSlotsBuilder.builder()
-                .addBasic(2)
-                .addInput(SimulationChamberBlockEntity.INPUT_COUNT)
-                .addOutput(SimulationChamberBlockEntity.OUTPUT_COUNT)
-                .addEnergy()
-                .build());
-    }
+                    ItemBlockMachine::new);
 
     private ModBlocks() {
     }
