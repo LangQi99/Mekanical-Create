@@ -1,6 +1,6 @@
 # Mekanical Create（通用动力）
 
-Mekanical Create is a NeoForge addon for **Create** and **Mekanism**. Its Simulation Chamber turns Create's physical processing lines into a compact, configurable machine while preserving Create's recipes and sequenced-assembly rules.
+Mekanical Create is a NeoForge addon for **Create** and **Mekanism**. Its Mekanical Factory turns Create's physical processing lines into a compact, configurable factory while preserving Create's recipes and sequenced-assembly rules.
 
 ## Target
 
@@ -10,7 +10,7 @@ Mekanical Create is a NeoForge addon for **Create** and **Mekanism**. Its Simula
 - Mekanism 10.7.19
 - Java 21
 
-## Simulation Chamber
+## Mekanical Factory
 
 The chamber has one Create machine-module slot, one fan-condition slot, sixteen unordered material inputs, and four buffered outputs. The condition slot is enabled only for the Encased Fan module.
 
@@ -31,7 +31,7 @@ Sequenced assembly is flattened into one operation: the starting item is consume
 
 JEI recipes are generated from the same catalog used by the server resolver. Module, fan condition, and non-consumed held tools use JEI's catalyst role, while flattened material counts use the input role for recipe-transfer and pattern-terminal compatibility.
 
-The machine exterior is derived from Mekanism's Electrolytic Separator model structure and directly reuses its tanks, tubes, casing, ports, QIO screen, supercharged-coil, and energy-glow textures. Its screen is built from Mekanism's own GUI base, inner screens, slots, energy bar, progress indicator, information tab, configuration tab, draggable window, and side-configuration colors. Item and energy access can be configured independently for all six relative sides and is persisted in the block entity.
+The machine exterior directly inherits Mekanism's Ultimate Enriching Factory composite model, including its recessed processing body, industrial shell, rear port, and tier indicator. Its screen is built from Mekanism's own GUI base, inner screens, slots, energy bar, progress indicator, information tab, configuration tab, draggable window, and side-configuration colors. Item and energy access can be configured independently for all six relative sides and is persisted in the block entity.
 
 ## Development
 

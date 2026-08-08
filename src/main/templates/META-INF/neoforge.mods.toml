@@ -46,7 +46,7 @@ authors="LangQi99"
 
 # The description text for the mod (multi line!) (#mandatory)
 description='''
-通用动力：在 Mekanism 风格的模拟室中，将 Create 的物理加工流程虚拟化。
+通用动力：在 Mekanism 风格的通用动力工厂中，集中执行 Create 的物理加工流程。
 Mekanical Create virtualizes Create processing and sequenced assembly inside a configurable simulation chamber.
 '''
 
@@ -108,7 +108,7 @@ Mekanical Create virtualizes Create processing and sequenced assembly inside a c
 [[dependencies.${mod_id}]]
     modId="jei"
     type="optional"
-    reason="JEI displays Simulation Chamber recipes and supports recipe transfer."
+    reason="JEI displays Mekanical Factory recipes and supports recipe transfer."
     versionRange="[19.19,20)"
     ordering="AFTER"
     side="CLIENT"

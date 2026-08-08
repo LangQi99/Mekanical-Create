@@ -3,7 +3,6 @@ package io.github.langqi99.mekanicalcreate.content;
 import mekanism.common.util.EnumUtils;
 import mekanism.common.util.VoxelShapeUtils;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 /** Collision geometry kept in lockstep with the detailed chamber model. */
@@ -12,15 +11,17 @@ public final class ModBlockShapes {
             new VoxelShape[EnumUtils.HORIZONTAL_DIRECTIONS.length];
 
     static {
-        VoxelShapeUtils.setShape(VoxelShapeUtils.rotate(VoxelShapeUtils.combine(
-                box(0, 0, 0, 16, 4, 16),
-                box(0, 4, 0, 7, 14, 7),
-                box(0, 4, 9, 7, 14, 16),
-                box(8, 4, 0, 16, 16, 16),
-                box(2.5, 3.5, 0, 7.5, 8.5, 1),
-                box(7, 4, 1, 8, 13, 15),
-                box(3, 10, 3, 8, 16, 13)
-        ), Rotation.CLOCKWISE_90), SIMULATION_CHAMBER);
+        VoxelShapeUtils.setShape(VoxelShapeUtils.combine(
+                box(0, 0, 0, 16, 16, 4),
+                box(4, 4, 14, 12, 12, 16),
+                box(1, 7, 4, 15, 14, 14),
+                box(2, 4, 4, 14, 7, 10),
+                box(5, 5, 10, 11, 7, 14),
+                box(0, 0, 4, 16, 4, 16),
+                box(0, 14, 4, 16, 16, 16),
+                box(0, 6, 4, 2, 14, 16),
+                box(14, 6, 4, 16, 14, 16)
+        ), SIMULATION_CHAMBER);
 
     }
 
