@@ -1,0 +1,19 @@
+{
+  "type": "mekanism:mek_data",
+  "category": "misc",
+  "key": {
+    "A": { "tag": "mekanism:alloys/infused" },
+    "C": { "tag": "c:circuits/advanced" },
+    "I": { "tag": "c:ingots/osmium" },
+    "P": { "item": "mekanicalcreate:basic_mekanical_factory" }
+  },
+  "pattern": [
+    "ACA",
+    "IPI",
+    "ACA"
+  ],
+  "result": {
+    "count": 1,
+    "id": "mekanicalcreate:advanced_mekanical_factory"
+  }
+}

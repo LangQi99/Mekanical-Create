@@ -89,14 +89,14 @@ public final class MekanicalCreateJeiPlugin implements IModPlugin {
         registration.addRecipeClickArea(SimulationChamberScreen.class,
                 123, 55, 28, 8, SimulationChamberRecipeCategory.TYPE);
         registration.addRecipeClickArea(FluidMekanicalFactoryScreen.class,
-                170, 55, 28, 8, SimulationChamberRecipeCategory.FLUID_TYPE);
+                158, 43, 84, 8, SimulationChamberRecipeCategory.FLUID_TYPE);
     }
 
     @Override
     public void registerRecipeTransferHandlers(IRecipeTransferRegistration registration) {
         registration.addRecipeTransferHandler(new SimulationChamberTransferInfo<>(
                 ModMenus.SIMULATION_CHAMBER.get(), SimulationChamberRecipeCategory.TYPE));
-        registration.addRecipeTransferHandler(new SimulationChamberTransferInfo<>(
+        registration.addRecipeTransferHandler(new MekanicalFactoryTransferInfo(
                 ModMenus.FLUID_MEKANICAL_FACTORY.get(),
                 SimulationChamberRecipeCategory.FLUID_TYPE));
     }

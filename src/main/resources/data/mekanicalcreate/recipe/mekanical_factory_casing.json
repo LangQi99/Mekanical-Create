@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "A": { "item": "mekanism:alloy_infused" },
+    "O": { "item": "mekanism:ingot_osmium" },
+    "S": { "item": "mekanism:steel_casing" }
+  },
+  "pattern": [
+    "OAO",
+    "ASA",
+    "OAO"
+  ],
+  "result": {
+    "count": 4,
+    "id": "mekanicalcreate:mekanical_factory_casing"
+  }
+}

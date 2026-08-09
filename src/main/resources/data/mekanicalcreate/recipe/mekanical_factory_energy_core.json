@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "A": { "item": "mekanism:alloy_reinforced" },
+    "E": { "item": "mekanism:upgrade_energy" },
+    "T": { "item": "mekanism:energy_tablet" }
+  },
+  "pattern": [
+    "AEA",
+    "ETE",
+    "AEA"
+  ],
+  "result": {
+    "count": 1,
+    "id": "mekanicalcreate:mekanical_factory_energy_core"
+  }
+}

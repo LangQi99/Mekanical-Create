@@ -1,17 +1,8 @@
 {
-  "loader": "neoforge:composite",
-  "parent": "block/block",
-  "render_type": "minecraft:cutout",
-  "gui_light": "side",
+  "parent": "mekanism:block/machine_front_led",
   "textures": {
-    "particle": "mekanism:block/models/digital_miner"
-  },
-  "children": {
-    "digital_miner_chassis": {
-      "parent": "mekanism:block/digital_miner_active"
-    },
-    "fluid_processing_array": {
-      "parent": "mekanicalcreate:block/fluid_mekanical_factory_fluid_details"
-    }
+    "sides": "mekanism:block/induction_casing",
+    "front": "mekanicalcreate:block/factory/mekanical_factory_multiblock_controller_front",
+    "front_led": "mekanicalcreate:block/factory/mekanical_factory_multiblock_controller_front_led"
   }
 }

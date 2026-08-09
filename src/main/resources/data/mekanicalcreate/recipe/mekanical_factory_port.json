@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "C": { "item": "mekanicalcreate:mekanical_factory_casing" },
+    "E": { "item": "mekanism:basic_universal_cable" },
+    "F": { "item": "mekanism:basic_mechanical_pipe" },
+    "I": { "item": "mekanism:basic_logistical_transporter" }
+  },
+  "pattern": [
+    " E ",
+    "ICI",
+    " F "
+  ],
+  "result": {
+    "count": 1,
+    "id": "mekanicalcreate:mekanical_factory_port"
+  }
+}

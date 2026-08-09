@@ -1,6 +1,10 @@
 package io.github.langqi99.mekanicalcreate.registry;
 
 import io.github.langqi99.mekanicalcreate.MekanicalCreate;
+import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryCasingBlockEntity;
+import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryControllerBlockEntity;
+import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryPortBlockEntity;
+import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryUpgradeCoreBlockEntity;
 import io.github.langqi99.mekanicalcreate.content.SimulationChamberBlockEntity;
 import mekanism.common.capabilities.Capabilities;
 import mekanism.common.registration.impl.TileEntityTypeDeferredRegister;
@@ -18,13 +22,57 @@ public final class ModBlockEntities {
             .withSimple(Capabilities.CONFIG_CARD)
             .build();
 
-    public static final TileEntityTypeRegistryObject<SimulationChamberBlockEntity> FLUID_MEKANICAL_FACTORY = TYPES
-            .mekBuilder(ModBlocks.FLUID_MEKANICAL_FACTORY,
-                    (pos, state) -> new SimulationChamberBlockEntity(
-                            ModBlocks.FLUID_MEKANICAL_FACTORY, pos, state))
+    public static final TileEntityTypeRegistryObject<MekanicalFactoryControllerBlockEntity> FLUID_MEKANICAL_FACTORY = TYPES
+            .mekBuilder(ModBlocks.FLUID_MEKANICAL_FACTORY, MekanicalFactoryControllerBlockEntity::new)
             .clientTicker(TileEntityMekanism::tickClient)
             .serverTicker(TileEntityMekanism::tickServer)
-            .withSimple(Capabilities.CONFIG_CARD)
+            .without(Capabilities.ITEM.block())
+            .build();
+
+    public static final TileEntityTypeRegistryObject<MekanicalFactoryCasingBlockEntity> MEKANICAL_FACTORY_CASING = TYPES
+            .mekBuilder(ModBlocks.MEKANICAL_FACTORY_CASING, MekanicalFactoryCasingBlockEntity::new)
+            .clientTicker(TileEntityMekanism::tickClient)
+            .serverTicker(TileEntityMekanism::tickServer)
+            .without(Capabilities.ITEM.block())
+            .build();
+
+    public static final TileEntityTypeRegistryObject<MekanicalFactoryPortBlockEntity> MEKANICAL_FACTORY_PORT = TYPES
+            .mekBuilder(ModBlocks.MEKANICAL_FACTORY_PORT, MekanicalFactoryPortBlockEntity::new)
+            .clientTicker(TileEntityMekanism::tickClient)
+            .serverTicker(TileEntityMekanism::tickServer)
+            .withSimple(Capabilities.CONFIGURABLE)
+            .build();
+
+    public static final TileEntityTypeRegistryObject<MekanicalFactoryUpgradeCoreBlockEntity> MEKANICAL_FACTORY_SPEED_CORE = TYPES
+            .mekBuilder(ModBlocks.MEKANICAL_FACTORY_SPEED_CORE,
+                    (pos, state) -> new MekanicalFactoryUpgradeCoreBlockEntity(
+                            ModBlocks.MEKANICAL_FACTORY_SPEED_CORE, pos, state))
+            .clientTicker(TileEntityMekanism::tickClient)
+            .serverTicker(TileEntityMekanism::tickServer)
+            .build();
+
+    public static final TileEntityTypeRegistryObject<MekanicalFactoryUpgradeCoreBlockEntity> MEKANICAL_FACTORY_ENERGY_CORE = TYPES
+            .mekBuilder(ModBlocks.MEKANICAL_FACTORY_ENERGY_CORE,
+                    (pos, state) -> new MekanicalFactoryUpgradeCoreBlockEntity(
+                            ModBlocks.MEKANICAL_FACTORY_ENERGY_CORE, pos, state))
+            .clientTicker(TileEntityMekanism::tickClient)
+            .serverTicker(TileEntityMekanism::tickServer)
+            .build();
+
+    public static final TileEntityTypeRegistryObject<MekanicalFactoryUpgradeCoreBlockEntity> MEKANICAL_FACTORY_FLUID_CORE = TYPES
+            .mekBuilder(ModBlocks.MEKANICAL_FACTORY_FLUID_CORE,
+                    (pos, state) -> new MekanicalFactoryUpgradeCoreBlockEntity(
+                            ModBlocks.MEKANICAL_FACTORY_FLUID_CORE, pos, state))
+            .clientTicker(TileEntityMekanism::tickClient)
+            .serverTicker(TileEntityMekanism::tickServer)
+            .build();
+
+    public static final TileEntityTypeRegistryObject<MekanicalFactoryUpgradeCoreBlockEntity> MEKANICAL_FACTORY_CATALYST_CORE = TYPES
+            .mekBuilder(ModBlocks.MEKANICAL_FACTORY_CATALYST_CORE,
+                    (pos, state) -> new MekanicalFactoryUpgradeCoreBlockEntity(
+                            ModBlocks.MEKANICAL_FACTORY_CATALYST_CORE, pos, state))
+            .clientTicker(TileEntityMekanism::tickClient)
+            .serverTicker(TileEntityMekanism::tickServer)
             .build();
 
     public static final TileEntityTypeRegistryObject<SimulationChamberBlockEntity> BASIC_MEKANICAL_FACTORY = TYPES

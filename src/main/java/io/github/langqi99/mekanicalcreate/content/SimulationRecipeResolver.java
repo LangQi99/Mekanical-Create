@@ -69,9 +69,51 @@ public final class SimulationRecipeResolver {
         if (module.isEmpty()) {
             return Optional.empty();
         }
+        return resolve(level, inputSlots, inputFluidTanks,
+                collectCandidates(level, module, condition, allowFluidProcessing));
+    }
+
+    /**
+     * Resolves a multiblock recipe from an unordered pool of configuration
+     * catalysts. Every slot may contain either a machine module or a fan
+     * condition; unsupported items simply do not contribute candidates.
+     */
+    static Optional<ExecutionPlan> resolve(Level level,
+                                           List<? extends IInventorySlot> catalystSlots,
+                                           List<? extends IInventorySlot> inputSlots,
+                                           List<? extends IExtendedFluidTank> inputFluidTanks,
+                                           boolean allowFluidProcessing) {
+        List<ItemStack> catalysts = distinctStacks(catalystSlots.stream()
+                .map(IInventorySlot::getStack)
+                .filter(stack -> !stack.isEmpty())
+                .toList());
+        List<ItemStack> conditions = catalysts.stream()
+                .filter(SimulationRecipeResolver::isSupportedCondition)
+                .toList();
+        List<Candidate> candidates = new ArrayList<>();
+        for (ItemStack module : catalysts) {
+            if (!isSupportedModule(module)) {
+                continue;
+            }
+            if (module.is(AllBlocks.ENCASED_FAN.asItem())) {
+                for (ItemStack condition : conditions) {
+                    candidates.addAll(collectCandidates(level, module, condition,
+                            allowFluidProcessing));
+                }
+            } else {
+                candidates.addAll(collectCandidates(level, module, ItemStack.EMPTY,
+                        allowFluidProcessing));
+            }
+        }
+        return resolve(level, inputSlots, inputFluidTanks, candidates);
+    }
+
+    private static Optional<ExecutionPlan> resolve(Level level,
+                                                   List<? extends IInventorySlot> inputSlots,
+                                                   List<? extends IExtendedFluidTank> inputFluidTanks,
+                                                   List<Candidate> candidates) {
         List<ItemStack> inventory = inputSlots.stream().map(IInventorySlot::getStack).toList();
         List<FluidStack> fluids = inputFluidTanks.stream().map(tank -> tank.getFluid().copy()).toList();
-        List<Candidate> candidates = collectCandidates(level, module, condition, allowFluidProcessing);
         CandidateMatch best = candidates.stream()
                 .map(candidate -> match(candidate, inventory, fluids))
                 .flatMap(Optional::stream)
@@ -84,6 +126,37 @@ public final class SimulationRecipeResolver {
         return Optional.of(new ExecutionPlan(best.candidate.id, best.candidate.duration,
                 best.match.stackUses, best.match.catalystUses, best.match.fluidUses,
                 results, best.candidate.fluidOutputs));
+    }
+
+    private static List<ItemStack> distinctStacks(List<ItemStack> stacks) {
+        List<ItemStack> distinct = new ArrayList<>();
+        for (ItemStack stack : stacks) {
+            if (distinct.stream().noneMatch(existing ->
+                    ItemStack.isSameItemSameComponents(existing, stack))) {
+                distinct.add(stack.copyWithCount(1));
+            }
+        }
+        return distinct;
+    }
+
+    private static boolean isSupportedModule(ItemStack stack) {
+        return stack.is(AllBlocks.DEPLOYER.asItem())
+                || stack.is(AllBlocks.MECHANICAL_SAW.asItem())
+                || stack.is(AllBlocks.MECHANICAL_PRESS.asItem())
+                || stack.is(AllBlocks.MILLSTONE.asItem())
+                || stack.is(AllBlocks.CRUSHING_WHEEL.asItem())
+                || stack.is(AllBlocks.ENCASED_FAN.asItem())
+                || stack.is(AllBlocks.MECHANICAL_CRAFTER.asItem())
+                || stack.is(AllBlocks.MECHANICAL_MIXER.asItem())
+                || stack.is(AllBlocks.SPOUT.asItem())
+                || stack.is(AllBlocks.ITEM_DRAIN.asItem());
+    }
+
+    private static boolean isSupportedCondition(ItemStack stack) {
+        return stack.is(Items.LAVA_BUCKET)
+                || stack.is(Items.WATER_BUCKET)
+                || stack.is(Items.SOUL_CAMPFIRE)
+                || stack.is(Items.CAMPFIRE);
     }
 
     /**

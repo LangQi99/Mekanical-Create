@@ -1,0 +1,7 @@
+{
+  "parent": "mekanism:block/template/cube_all_led",
+  "textures": {
+    "all": "mekanism:block/induction_casing",
+    "led": "mekanicalcreate:block/factory/mekanical_factory_port_catalyst_led"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "A": { "item": "mekanism:alloy_reinforced" },
+    "B": { "item": "minecraft:bucket" },
+    "T": { "item": "mekanism:basic_fluid_tank" }
+  },
+  "pattern": [
+    "ABA",
+    "BTB",
+    "ABA"
+  ],
+  "result": {
+    "count": 1,
+    "id": "mekanicalcreate:mekanical_factory_fluid_core"
+  }
+}

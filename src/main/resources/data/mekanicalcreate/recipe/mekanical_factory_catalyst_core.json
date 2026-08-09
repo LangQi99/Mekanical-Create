@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "A": { "item": "mekanism:alloy_reinforced" },
+    "C": { "item": "mekanism:basic_control_circuit" },
+    "F": { "item": "mekanism:formulaic_assemblicator" },
+    "H": { "item": "minecraft:hopper" }
+  },
+  "pattern": [
+    "AHA",
+    "CFC",
+    "AHA"
+  ],
+  "result": {
+    "count": 1,
+    "id": "mekanicalcreate:mekanical_factory_catalyst_core"
+  }
+}
