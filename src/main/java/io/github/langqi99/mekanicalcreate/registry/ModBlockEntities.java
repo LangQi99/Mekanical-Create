@@ -1,6 +1,10 @@
 package io.github.langqi99.mekanicalcreate.registry;
 
 import io.github.langqi99.mekanicalcreate.MekanicalCreate;
+import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryCasingBlockEntity;
+import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryControllerBlockEntity;
+import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryPortBlockEntity;
+import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryUpgradeCoreBlockEntity;
 import io.github.langqi99.mekanicalcreate.content.SimulationChamberBlockEntity;
 import mekanism.common.registration.impl.TileEntityTypeDeferredRegister;
 import mekanism.common.registration.impl.TileEntityTypeRegistryObject;
@@ -12,6 +16,56 @@ public final class ModBlockEntities {
 
     public static final TileEntityTypeRegistryObject<SimulationChamberBlockEntity> SIMULATION_CHAMBER = TYPES
             .builder(ModBlocks.SIMULATION_CHAMBER, SimulationChamberBlockEntity::new)
+            .clientTicker(TileEntityMekanism::tickClient)
+            .serverTicker(TileEntityMekanism::tickServer)
+            .build();
+
+    public static final TileEntityTypeRegistryObject<MekanicalFactoryControllerBlockEntity> FLUID_MEKANICAL_FACTORY = TYPES
+            .builder(ModBlocks.FLUID_MEKANICAL_FACTORY, MekanicalFactoryControllerBlockEntity::new)
+            .clientTicker(TileEntityMekanism::tickClient)
+            .serverTicker(TileEntityMekanism::tickServer)
+            .build();
+
+    public static final TileEntityTypeRegistryObject<MekanicalFactoryCasingBlockEntity> MEKANICAL_FACTORY_CASING = TYPES
+            .builder(ModBlocks.MEKANICAL_FACTORY_CASING, MekanicalFactoryCasingBlockEntity::new)
+            .clientTicker(TileEntityMekanism::tickClient)
+            .serverTicker(TileEntityMekanism::tickServer)
+            .build();
+
+    public static final TileEntityTypeRegistryObject<MekanicalFactoryPortBlockEntity> MEKANICAL_FACTORY_PORT = TYPES
+            .builder(ModBlocks.MEKANICAL_FACTORY_PORT, MekanicalFactoryPortBlockEntity::new)
+            .clientTicker(TileEntityMekanism::tickClient)
+            .serverTicker(TileEntityMekanism::tickServer)
+            .build();
+
+    public static final TileEntityTypeRegistryObject<MekanicalFactoryUpgradeCoreBlockEntity> MEKANICAL_FACTORY_SPEED_CORE = TYPES
+            .builder(ModBlocks.MEKANICAL_FACTORY_SPEED_CORE,
+                    (pos, state) -> new MekanicalFactoryUpgradeCoreBlockEntity(
+                            ModBlocks.MEKANICAL_FACTORY_SPEED_CORE, pos, state))
+            .clientTicker(TileEntityMekanism::tickClient)
+            .serverTicker(TileEntityMekanism::tickServer)
+            .build();
+
+    public static final TileEntityTypeRegistryObject<MekanicalFactoryUpgradeCoreBlockEntity> MEKANICAL_FACTORY_ENERGY_CORE = TYPES
+            .builder(ModBlocks.MEKANICAL_FACTORY_ENERGY_CORE,
+                    (pos, state) -> new MekanicalFactoryUpgradeCoreBlockEntity(
+                            ModBlocks.MEKANICAL_FACTORY_ENERGY_CORE, pos, state))
+            .clientTicker(TileEntityMekanism::tickClient)
+            .serverTicker(TileEntityMekanism::tickServer)
+            .build();
+
+    public static final TileEntityTypeRegistryObject<MekanicalFactoryUpgradeCoreBlockEntity> MEKANICAL_FACTORY_FLUID_CORE = TYPES
+            .builder(ModBlocks.MEKANICAL_FACTORY_FLUID_CORE,
+                    (pos, state) -> new MekanicalFactoryUpgradeCoreBlockEntity(
+                            ModBlocks.MEKANICAL_FACTORY_FLUID_CORE, pos, state))
+            .clientTicker(TileEntityMekanism::tickClient)
+            .serverTicker(TileEntityMekanism::tickServer)
+            .build();
+
+    public static final TileEntityTypeRegistryObject<MekanicalFactoryUpgradeCoreBlockEntity> MEKANICAL_FACTORY_CATALYST_CORE = TYPES
+            .builder(ModBlocks.MEKANICAL_FACTORY_CATALYST_CORE,
+                    (pos, state) -> new MekanicalFactoryUpgradeCoreBlockEntity(
+                            ModBlocks.MEKANICAL_FACTORY_CATALYST_CORE, pos, state))
             .clientTicker(TileEntityMekanism::tickClient)
             .serverTicker(TileEntityMekanism::tickServer)
             .build();

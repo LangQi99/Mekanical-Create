@@ -16,9 +16,12 @@ import net.minecraft.world.inventory.Slot;
 public final class SimulationChamberTransferInfo<TILE extends SimulationChamberBlockEntity> implements IRecipeTransferInfo<
         MekanismTileContainer<TILE>, DisplayRecipe> {
     private final MenuType<MekanismTileContainer<TILE>> menuType;
+    private final RecipeType<DisplayRecipe> recipeType;
 
-    public SimulationChamberTransferInfo(MenuType<MekanismTileContainer<TILE>> menuType) {
+    public SimulationChamberTransferInfo(MenuType<MekanismTileContainer<TILE>> menuType,
+                                         RecipeType<DisplayRecipe> recipeType) {
         this.menuType = menuType;
+        this.recipeType = recipeType;
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -34,7 +37,7 @@ public final class SimulationChamberTransferInfo<TILE extends SimulationChamberB
 
     @Override
     public RecipeType<DisplayRecipe> getRecipeType() {
-        return SimulationChamberRecipeCategory.TYPE;
+        return recipeType;
     }
 
     @Override

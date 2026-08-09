@@ -1,7 +1,9 @@
 package io.github.langqi99.mekanicalcreate.client;
 
 import io.github.langqi99.mekanicalcreate.MekanicalCreate;
+import io.github.langqi99.mekanicalcreate.client.ponder.MekanicalCreatePonderPlugin;
 import io.github.langqi99.mekanicalcreate.registry.ModMenus;
+import net.createmod.ponder.foundation.PonderIndex;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
@@ -15,6 +17,10 @@ public final class MekanicalCreateClient {
 
     @SubscribeEvent
     public static void registerScreens(FMLClientSetupEvent event) {
-        event.enqueueWork(() -> MenuScreens.register(ModMenus.SIMULATION_CHAMBER.get(), SimulationChamberScreen::new));
+        event.enqueueWork(() -> {
+            PonderIndex.addPlugin(new MekanicalCreatePonderPlugin());
+            MenuScreens.register(ModMenus.SIMULATION_CHAMBER.get(), SimulationChamberScreen::new);
+            MenuScreens.register(ModMenus.FLUID_MEKANICAL_FACTORY.get(), FluidMekanicalFactoryScreen::new);
+        });
     }
 }

@@ -16,6 +16,13 @@ public final class ModItems {
             .icon(() -> ModBlocks.SIMULATION_CHAMBER.asItem().getDefaultInstance())
             .displayItems((parameters, output) -> {
                 output.accept(ModBlocks.SIMULATION_CHAMBER.asItem());
+                output.accept(ModBlocks.FLUID_MEKANICAL_FACTORY.asItem());
+                output.accept(ModBlocks.MEKANICAL_FACTORY_CASING.asItem());
+                output.accept(ModBlocks.MEKANICAL_FACTORY_PORT.asItem());
+                output.accept(ModBlocks.MEKANICAL_FACTORY_SPEED_CORE.asItem());
+                output.accept(ModBlocks.MEKANICAL_FACTORY_ENERGY_CORE.asItem());
+                output.accept(ModBlocks.MEKANICAL_FACTORY_FLUID_CORE.asItem());
+                output.accept(ModBlocks.MEKANICAL_FACTORY_CATALYST_CORE.asItem());
                 output.accept(ModBlocks.BASIC_MEKANICAL_FACTORY.asItem());
                 output.accept(ModBlocks.ADVANCED_MEKANICAL_FACTORY.asItem());
                 output.accept(ModBlocks.ELITE_MEKANICAL_FACTORY.asItem());

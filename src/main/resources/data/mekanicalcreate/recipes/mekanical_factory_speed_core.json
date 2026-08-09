@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "A": { "item": "mekanism:alloy_reinforced" },
+    "P": { "item": "create:precision_mechanism" },
+    "S": { "item": "mekanism:upgrade_speed" }
+  },
+  "pattern": [
+    "ASA",
+    "SPS",
+    "ASA"
+  ],
+  "result": {
+    "count": 1,
+    "item": "mekanicalcreate:mekanical_factory_speed_core"
+  }
+}

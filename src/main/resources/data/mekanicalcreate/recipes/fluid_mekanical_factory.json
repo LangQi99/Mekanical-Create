@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "C": { "item": "mekanicalcreate:simulation_chamber" },
+    "D": { "item": "create:item_drain" },
+    "S": { "item": "create:spout" },
+    "T": { "item": "mekanism:basic_fluid_tank" }
+  },
+  "pattern": [
+    " T ",
+    "SCD",
+    " T "
+  ],
+  "result": {
+    "count": 1,
+    "item": "mekanicalcreate:fluid_mekanical_factory"
+  }
+}

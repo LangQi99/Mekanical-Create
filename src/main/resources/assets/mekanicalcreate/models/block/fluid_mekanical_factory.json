@@ -1,0 +1,7 @@
+{
+  "parent": "mekanism:block/machine",
+  "textures": {
+    "sides": "mekanism:block/induction_casing",
+    "front": "mekanicalcreate:block/factory/mekanical_factory_multiblock_controller_front"
+  }
+}

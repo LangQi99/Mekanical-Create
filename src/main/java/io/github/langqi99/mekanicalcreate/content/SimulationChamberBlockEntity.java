@@ -205,7 +205,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         }
 
         if (activePlan != null && planDirty) {
-            if (!activePlan.stillValid(inputSlots)) {
+            if (!activePlan.stillValid(inputSlots, List.of())) {
                 invalidatePlan();
             } else {
                 planDirty = false;
@@ -214,7 +214,8 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
 
         if (activePlan == null) {
             activePlan = SimulationRecipeResolver.resolve(
-                    level, moduleSlot.getStack(), conditionSlot.getStack(), inputSlots).orElse(null);
+                    level, moduleSlot.getStack(), conditionSlot.getStack(), inputSlots,
+                    List.of(), false).orElse(null);
             if (activePlan == null) {
                 resetIdle();
                 return;
@@ -224,7 +225,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             planDirty = false;
         }
 
-        if (!canFit(activePlan.results())) {
+        if (!canFit(activePlan.itemResults())) {
             setActive(false);
             return;
         }
@@ -239,13 +240,13 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         setActive(true);
         progress++;
         if (progress >= duration) {
-            if (!activePlan.stillValid(inputSlots) || !canFit(activePlan.results())) {
+            if (!activePlan.stillValid(inputSlots, List.of()) || !canFit(activePlan.itemResults())) {
                 invalidatePlan();
                 setActive(false);
                 return;
             }
-            activePlan.consume(inputSlots);
-            insertResults(activePlan.results());
+            activePlan.consume(inputSlots, List.of());
+            insertResults(activePlan.itemResults());
             activePlan = null;
             progress = 0;
             duration = DEFAULT_DURATION;

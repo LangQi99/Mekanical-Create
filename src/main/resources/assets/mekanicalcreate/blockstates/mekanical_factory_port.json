@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "mode=input": { "model": "mekanicalcreate:block/mekanical_factory_port_input" },
+    "mode=output": { "model": "mekanicalcreate:block/mekanical_factory_port_output" },
+    "mode=catalyst": { "model": "mekanicalcreate:block/mekanical_factory_port_catalyst" },
+    "mode=energy": { "model": "mekanicalcreate:block/mekanical_factory_port_energy" }
+  }
+}
