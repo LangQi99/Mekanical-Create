@@ -181,6 +181,51 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
 }
 
+// Every placeable block must have both a loot table and an appropriate mining
+// tag. Missing the latter makes Mekanism-style machine blocks silently drop
+// nothing even when their loot table exists.
+def blockstatesDirectory = file("src/main/resources/assets/${mod_id}/blockstates")
+def blockLootDirectory = file("src/main/resources/data/${mod_id}/loot_tables/blocks")
+def pickaxeTagFile = file("src/main/resources/data/minecraft/tags/blocks/mineable/pickaxe.json")
+def validatedModId = mod_id.toString()
+def blockstateFiles = fileTree(blockstatesDirectory) {
+    include '*.json'
+}
+def blockLootFiles = fileTree(blockLootDirectory) {
+    include '*.json'
+}
+
+tasks.register('validateBlockDrops') {
+    group = 'verification'
+    description = 'Checks that every blockstate has a loot table and is mineable with a pickaxe.'
+    inputs.files(blockstateFiles)
+    inputs.files(blockLootFiles)
+    inputs.file(pickaxeTagFile)
+
+    doLast {
+        def blockIds = blockstateFiles.files.collect {
+            it.name.substring(0, it.name.length() - '.json'.length())
+        }.toSet()
+        def lootIds = blockLootFiles.files.collect {
+            it.name.substring(0, it.name.length() - '.json'.length())
+        }.toSet()
+        def pickaxeTag = new groovy.json.JsonSlurper().parse(pickaxeTagFile)
+        def pickaxeIds = pickaxeTag.values.findAll {
+            it instanceof String && it.startsWith("${validatedModId}:")
+        }.collect { it.substring(it.indexOf(':') + 1) }.toSet()
+
+        def missingLoot = blockIds - lootIds
+        def missingPickaxeTags = blockIds - pickaxeIds
+        if (!missingLoot.empty || !missingPickaxeTags.empty) {
+            throw new GradleException("Invalid block drops. Missing loot tables: ${missingLoot.sort()}; missing pickaxe tags: ${missingPickaxeTags.sort()}")
+        }
+    }
+}
+
+tasks.named('check').configure {
+    dependsOn tasks.named('validateBlockDrops')
+}
+
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.
 idea {
     module {
