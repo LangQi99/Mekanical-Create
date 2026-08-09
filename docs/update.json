@@ -4,12 +4,13 @@
     "0.2.0": "Adds expandable fluid multiblock factories, configurable item/fluid/energy ports, upgrade cores, dynamic GUIs, and complete JEI integration."
   },
   "1.21.1": {
-    "0.2.0": "Adds expandable fluid multiblock factories, configurable item/fluid/energy ports, upgrade cores, dynamic GUIs, and complete JEI integration."
+    "0.2.0": "Adds expandable fluid multiblock factories, configurable item/fluid/energy ports, upgrade cores, dynamic GUIs, and complete JEI integration.",
+    "0.2.1": "Fixes Mekanical Create machines and multiblock components not dropping when mined with a pickaxe."
   },
   "promos": {
     "1.20.1-latest": "0.2.0",
     "1.20.1-recommended": "0.2.0",
-    "1.21.1-latest": "0.2.0",
-    "1.21.1-recommended": "0.2.0"
+    "1.21.1-latest": "0.2.1",
+    "1.21.1-recommended": "0.2.1"
   }
 }

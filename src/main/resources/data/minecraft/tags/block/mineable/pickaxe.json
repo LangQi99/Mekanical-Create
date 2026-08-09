@@ -1,0 +1,17 @@
+{
+  "replace": false,
+  "values": [
+    "mekanicalcreate:simulation_chamber",
+    "mekanicalcreate:fluid_mekanical_factory",
+    "mekanicalcreate:mekanical_factory_casing",
+    "mekanicalcreate:mekanical_factory_port",
+    "mekanicalcreate:mekanical_factory_speed_core",
+    "mekanicalcreate:mekanical_factory_energy_core",
+    "mekanicalcreate:mekanical_factory_fluid_core",
+    "mekanicalcreate:mekanical_factory_catalyst_core",
+    "mekanicalcreate:basic_mekanical_factory",
+    "mekanicalcreate:advanced_mekanical_factory",
+    "mekanicalcreate:elite_mekanical_factory",
+    "mekanicalcreate:ultimate_mekanical_factory"
+  ]
+}
