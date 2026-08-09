@@ -38,6 +38,20 @@ base {
     archivesName = mod_id
 }
 
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes(
+                'Specification-Title': mod_id,
+                'Specification-Vendor': mod_authors,
+                'Specification-Version': '1',
+                'Implementation-Title': mod_name,
+                'Implementation-Version': mod_version,
+                'Implementation-Vendor': mod_authors,
+                'Automatic-Module-Name': mod_group_id,
+        )
+    }
+}
+
 // Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
@@ -146,6 +160,8 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
             mod_id                 : mod_id,
             mod_name               : mod_name,
             mod_license            : mod_license,
+            mod_authors            : mod_authors,
+            mod_credits            : mod_credits,
             mod_version            : mod_version,
             create_version         : create_version,
             mekanism_version       : mekanism_version,
