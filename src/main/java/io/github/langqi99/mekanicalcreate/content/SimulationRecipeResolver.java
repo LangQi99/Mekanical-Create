@@ -10,8 +10,12 @@ import com.simibubi.create.content.kinetics.fan.processing.FanProcessingType;
 import com.simibubi.create.content.kinetics.fan.processing.HauntingRecipe;
 import com.simibubi.create.content.kinetics.fan.processing.SplashingRecipe;
 import com.simibubi.create.content.kinetics.millstone.MillingRecipe;
+import com.simibubi.create.content.kinetics.mixer.CompactingRecipe;
+import com.simibubi.create.content.kinetics.mixer.MixingRecipe;
 import com.simibubi.create.content.kinetics.press.PressingRecipe;
 import com.simibubi.create.content.kinetics.saw.CuttingRecipe;
+import com.simibubi.create.content.fluids.transfer.EmptyingRecipe;
+import com.simibubi.create.content.fluids.transfer.FillingRecipe;
 import com.simibubi.create.content.processing.recipe.ProcessingOutput;
 import com.simibubi.create.content.processing.recipe.ProcessingRecipe;
 import com.simibubi.create.content.processing.sequenced.SequencedAssemblyRecipe;
@@ -26,6 +30,7 @@ import java.util.function.BiFunction;
 import mekanism.api.Action;
 import mekanism.api.AutomationType;
 import mekanism.api.inventory.IInventorySlot;
+import mekanism.api.fluid.IExtendedFluidTank;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -43,6 +48,8 @@ import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.ShapedRecipe;
 import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.crafting.SizedFluidIngredient;
 
 /**
  * Resolves the unordered item pool into one deterministic operation. Inventory
@@ -56,14 +63,17 @@ public final class SimulationRecipeResolver {
     }
 
     static Optional<ExecutionPlan> resolve(Level level, ItemStack module, ItemStack condition,
-                                           List<? extends IInventorySlot> inputSlots) {
+                                           List<? extends IInventorySlot> inputSlots,
+                                           List<? extends IExtendedFluidTank> inputFluidTanks,
+                                           boolean allowFluidProcessing) {
         if (module.isEmpty()) {
             return Optional.empty();
         }
         List<ItemStack> inventory = inputSlots.stream().map(IInventorySlot::getStack).toList();
-        List<Candidate> candidates = collectCandidates(level, module, condition);
+        List<FluidStack> fluids = inputFluidTanks.stream().map(tank -> tank.getFluid().copy()).toList();
+        List<Candidate> candidates = collectCandidates(level, module, condition, allowFluidProcessing);
         CandidateMatch best = candidates.stream()
-                .map(candidate -> match(candidate, inventory))
+                .map(candidate -> match(candidate, inventory, fluids))
                 .flatMap(Optional::stream)
                 .max(CandidateMatch.ORDER)
                 .orElse(null);
@@ -72,7 +82,8 @@ public final class SimulationRecipeResolver {
         }
         List<ItemStack> results = best.candidate.resultFactory.apply(level, best.match);
         return Optional.of(new ExecutionPlan(best.candidate.id, best.candidate.duration,
-                best.match.stackUses, best.match.catalystUses, results));
+                best.match.stackUses, best.match.catalystUses, best.match.fluidUses,
+                results, best.candidate.fluidOutputs));
     }
 
     /**
@@ -80,23 +91,30 @@ public final class SimulationRecipeResolver {
      * server-side resolver. Module and condition items are configuration
      * catalysts, while {@link DisplayInput#consumed()} controls pattern inputs.
      */
-    public static List<DisplayRecipe> getDisplayRecipes(Level level) {
+    public static List<DisplayRecipe> getDisplayRecipes(Level level, boolean allowFluidProcessing) {
         List<DisplayRecipe> result = new ArrayList<>();
-        List<ItemStack> modules = List.of(
+        List<ItemStack> modules = new ArrayList<>(List.of(
                 AllBlocks.DEPLOYER.asStack(),
                 AllBlocks.MECHANICAL_PRESS.asStack(),
                 AllBlocks.MECHANICAL_SAW.asStack(),
                 AllBlocks.MILLSTONE.asStack(),
                 AllBlocks.CRUSHING_WHEEL.asStack(),
-                AllBlocks.MECHANICAL_CRAFTER.asStack());
+                AllBlocks.MECHANICAL_CRAFTER.asStack()));
+        if (allowFluidProcessing) {
+            modules.add(AllBlocks.MECHANICAL_MIXER.asStack());
+            modules.add(AllBlocks.SPOUT.asStack());
+            modules.add(AllBlocks.ITEM_DRAIN.asStack());
+        }
         for (ItemStack module : modules) {
-            appendDisplayRecipes(result, collectCandidates(level, module, ItemStack.EMPTY), module, ItemStack.EMPTY);
+            appendDisplayRecipes(result, collectCandidates(level, module, ItemStack.EMPTY,
+                    allowFluidProcessing), module, ItemStack.EMPTY);
         }
         ItemStack fan = AllBlocks.ENCASED_FAN.asStack();
         for (ItemStack condition : List.of(
                 new ItemStack(Items.WATER_BUCKET), new ItemStack(Items.SOUL_CAMPFIRE),
                 new ItemStack(Items.CAMPFIRE), new ItemStack(Items.LAVA_BUCKET))) {
-            appendDisplayRecipes(result, collectCandidates(level, fan, condition), fan, condition);
+            appendDisplayRecipes(result, collectCandidates(level, fan, condition,
+                    allowFluidProcessing), fan, condition);
         }
         return List.copyOf(result);
     }
@@ -116,6 +134,8 @@ public final class SimulationRecipeResolver {
             target.add(new DisplayRecipe(displayId,
                     Component.translatable("jei.mekanicalcreate.process." + candidate.process),
                     module, condition, inputs, candidate.displayOutputs,
+                    candidate.fluidRequirements.stream().map(FluidRequirement::ingredient).toList(),
+                    candidate.displayFluidOutputs(),
                     candidate.sequenceSteps, candidate.loops));
         }
     }
@@ -171,7 +191,8 @@ public final class SimulationRecipeResolver {
         return true;
     }
 
-    private static List<Candidate> collectCandidates(Level level, ItemStack module, ItemStack condition) {
+    private static List<Candidate> collectCandidates(Level level, ItemStack module, ItemStack condition,
+                                                     boolean allowFluidProcessing) {
         List<Candidate> candidates = new ArrayList<>();
         RecipeManager recipes = level.getRecipeManager();
 
@@ -184,17 +205,22 @@ public final class SimulationRecipeResolver {
                             .map(ManualApplicationRecipe::asDeploying)
                             .toList(),
                     "deploying", 20, true);
-            addSequenced(candidates, recipes, ModuleKind.DEPLOYER);
+            addSequenced(candidates, recipes, ModuleKind.DEPLOYER, allowFluidProcessing);
         } else if (module.is(AllBlocks.MECHANICAL_PRESS.asItem())) {
             RecipeType<PressingRecipe> type = AllRecipeTypes.PRESSING.getType();
             addProcessing(candidates, recipes.getAllRecipesFor(type),
                     "pressing", 20, false);
-            addSequenced(candidates, recipes, ModuleKind.PRESS);
+            if (allowFluidProcessing) {
+                RecipeType<CompactingRecipe> compacting = AllRecipeTypes.COMPACTING.getType();
+                addProcessing(candidates, recipes.getAllRecipesFor(compacting),
+                        "compacting", 35, false);
+            }
+            addSequenced(candidates, recipes, ModuleKind.PRESS, allowFluidProcessing);
         } else if (module.is(AllBlocks.MECHANICAL_SAW.asItem())) {
             RecipeType<CuttingRecipe> type = AllRecipeTypes.CUTTING.getType();
             addProcessing(candidates, recipes.getAllRecipesFor(type),
                     "cutting", 20, false);
-            addSequenced(candidates, recipes, ModuleKind.SAW);
+            addSequenced(candidates, recipes, ModuleKind.SAW, allowFluidProcessing);
         } else if (module.is(AllBlocks.MILLSTONE.asItem())) {
             RecipeType<MillingRecipe> type = AllRecipeTypes.MILLING.getType();
             addProcessing(candidates, recipes.getAllRecipesFor(type),
@@ -211,6 +237,19 @@ public final class SimulationRecipeResolver {
             RecipeType<CraftingRecipe> type = AllRecipeTypes.MECHANICAL_CRAFTING.getType();
             addCrafting(candidates, recipes.getAllRecipesFor(type),
                     "mechanical_crafting", 20, level);
+        } else if (allowFluidProcessing && module.is(AllBlocks.MECHANICAL_MIXER.asItem())) {
+            RecipeType<MixingRecipe> type = AllRecipeTypes.MIXING.getType();
+            addProcessing(candidates, recipes.getAllRecipesFor(type),
+                    "mixing", 35, false);
+        } else if (allowFluidProcessing && module.is(AllBlocks.SPOUT.asItem())) {
+            RecipeType<FillingRecipe> type = AllRecipeTypes.FILLING.getType();
+            addProcessing(candidates, recipes.getAllRecipesFor(type),
+                    "filling", 35, false);
+            addSequenced(candidates, recipes, ModuleKind.SPOUT, true);
+        } else if (allowFluidProcessing && module.is(AllBlocks.ITEM_DRAIN.asItem())) {
+            RecipeType<EmptyingRecipe> type = AllRecipeTypes.EMPTYING.getType();
+            addProcessing(candidates, recipes.getAllRecipesFor(type),
+                    "emptying", 35, false);
         }
         return candidates;
     }
@@ -234,19 +273,23 @@ public final class SimulationRecipeResolver {
                         || !application.shouldKeepHeldItem();
                 requirements.add(new Requirement(ingredient, 1, consumed, index));
             }
-            if (requirements.isEmpty()) {
+            List<FluidRequirement> fluidRequirements = recipe.getFluidIngredients().stream()
+                    .map(FluidRequirement::new).toList();
+            if (requirements.isEmpty() && fluidRequirements.isEmpty()) {
                 continue;
             }
             int duration = recipe.getProcessingDuration() > 0
                     ? Math.max(20, recipe.getProcessingDuration()) : DEFAULT_DURATION;
             target.add(new Candidate(derivedId(holder.id(), suffix), suffix, requirements,
-                    displayOutputs(recipe.getRollableResults(), false), 0, 1,
+                    fluidRequirements, displayOutputs(recipe.getRollableResults(), false),
+                    recipe.getFluidResults().stream().map(FluidStack::copy).toList(), 0, 1,
                     1, priority, duration,
                     (level, match) -> appendRemainders(recipe.rollResults(level.random), match)));
         }
     }
 
-    private static void addSequenced(List<Candidate> target, RecipeManager manager, ModuleKind selectedModule) {
+    private static void addSequenced(List<Candidate> target, RecipeManager manager,
+                                     ModuleKind selectedModule, boolean allowFluidProcessing) {
         RecipeType<SequencedAssemblyRecipe> type = AllRecipeTypes.SEQUENCED_ASSEMBLY.getType();
         for (RecipeHolder<SequencedAssemblyRecipe> holder
                 : manager.getAllRecipesFor(type)) {
@@ -274,6 +317,12 @@ public final class SimulationRecipeResolver {
                     containsSelectedModule |= selectedModule == ModuleKind.PRESS;
                 } else if (processing instanceof CuttingRecipe) {
                     containsSelectedModule |= selectedModule == ModuleKind.SAW;
+                } else if (processing instanceof FillingRecipe filling) {
+                    if (!allowFluidProcessing) {
+                        supported = false;
+                        break;
+                    }
+                    containsSelectedModule |= selectedModule == ModuleKind.SPOUT;
                 } else {
                     supported = false;
                     break;
@@ -282,8 +331,17 @@ public final class SimulationRecipeResolver {
             if (!supported || !containsSelectedModule) {
                 continue;
             }
+            List<FluidRequirement> fluidRequirements = new ArrayList<>();
+            for (SequencedRecipe<?> step : recipe.getSequence()) {
+                if (step.getRecipe() instanceof FillingRecipe filling) {
+                    SizedFluidIngredient fluid = filling.getRequiredFluid();
+                    fluidRequirements.add(new FluidRequirement(new SizedFluidIngredient(
+                            fluid.ingredient(), Math.multiplyExact(fluid.amount(), loops))));
+                }
+            }
             target.add(new Candidate(derivedId(holder.id(), "sequenced_assembly"), "sequenced_assembly",
-                    requirements, displayOutputs(recipe.resultPool, true), recipe.getSequence().size(), loops,
+                    requirements, fluidRequirements, displayOutputs(recipe.resultPool, true), List.of(),
+                    recipe.getSequence().size(), loops,
                     recipe.getSequence().size() * loops, 100, DEFAULT_DURATION,
                     (level, match) -> appendRemainders(
                             List.of(rollWeighted(recipe.resultPool, level.random)), match)));
@@ -423,21 +481,34 @@ public final class SimulationRecipeResolver {
         return results;
     }
 
-    private static Optional<CandidateMatch> match(Candidate candidate, List<ItemStack> inventory) {
+    private static Optional<CandidateMatch> match(Candidate candidate, List<ItemStack> inventory,
+                                                   List<FluidStack> fluids) {
         Match oneRun = allocate(candidate, inventory, 1);
-        if (oneRun == null) {
+        List<FluidUse> oneRunFluids = allocateFluids(candidate, fluids, 1);
+        if (oneRun == null || oneRunFluids == null) {
             return Optional.empty();
         }
+        oneRun.fluidUses = oneRunFluids;
         int maximumRuns = 1;
         int totalItems = inventory.stream().mapToInt(ItemStack::getCount).sum();
         int consumedPerRun = candidate.consumedPerRun();
-        if (consumedPerRun > 0) {
-            int upper = Math.max(1, totalItems / consumedPerRun);
+        int totalFluid = fluids.stream().mapToInt(FluidStack::getAmount).sum();
+        int fluidPerRun = candidate.fluidConsumedPerRun();
+        if (consumedPerRun > 0 || fluidPerRun > 0) {
+            int upper = Integer.MAX_VALUE;
+            if (consumedPerRun > 0) {
+                upper = Math.min(upper, totalItems / consumedPerRun);
+            }
+            if (fluidPerRun > 0) {
+                upper = Math.min(upper, totalFluid / fluidPerRun);
+            }
+            upper = Math.max(1, upper);
             int low = 1;
             int high = upper;
             while (low <= high) {
                 int middle = (low + high) >>> 1;
-                if (allocate(candidate, inventory, middle) != null) {
+                if (allocate(candidate, inventory, middle) != null
+                        && allocateFluids(candidate, fluids, middle) != null) {
                     maximumRuns = middle;
                     low = middle + 1;
                 } else {
@@ -447,6 +518,61 @@ public final class SimulationRecipeResolver {
         }
         oneRun.candidate = candidate;
         return Optional.of(new CandidateMatch(candidate, oneRun, maximumRuns));
+    }
+
+    @Nullable
+    private static List<FluidUse> allocateFluids(Candidate candidate, List<FluidStack> fluids,
+                                                  int multiplier) {
+        if (candidate.fluidRequirements.isEmpty()) {
+            return List.of();
+        }
+        int tankCount = fluids.size();
+        int requirementCount = candidate.fluidRequirements.size();
+        int source = 0;
+        int firstTank = 1;
+        int firstRequirement = firstTank + tankCount;
+        int sink = firstRequirement + requirementCount;
+        FlowNetwork flow = new FlowNetwork(sink + 1);
+        for (int tank = 0; tank < tankCount; tank++) {
+            FluidStack stack = fluids.get(tank);
+            if (!stack.isEmpty()) {
+                flow.addEdge(source, firstTank + tank, stack.getAmount());
+            }
+        }
+        int demand = 0;
+        FlowEdge[][] assignmentEdges = new FlowEdge[tankCount][requirementCount];
+        for (int requirement = 0; requirement < requirementCount; requirement++) {
+            SizedFluidIngredient ingredient = candidate.fluidRequirements.get(requirement).ingredient;
+            int amount = Math.multiplyExact(ingredient.amount(), multiplier);
+            demand += amount;
+            flow.addEdge(firstRequirement + requirement, sink, amount);
+            for (int tank = 0; tank < tankCount; tank++) {
+                FluidStack stack = fluids.get(tank);
+                if (!stack.isEmpty() && ingredient.ingredient().test(stack)) {
+                    assignmentEdges[tank][requirement] = flow.addEdge(
+                            firstTank + tank, firstRequirement + requirement, stack.getAmount());
+                }
+            }
+        }
+        if (flow.maxFlow(source, sink) != demand) {
+            return null;
+        }
+        int[] usedByTank = new int[tankCount];
+        for (int tank = 0; tank < tankCount; tank++) {
+            for (int requirement = 0; requirement < requirementCount; requirement++) {
+                FlowEdge edge = assignmentEdges[tank][requirement];
+                if (edge != null) {
+                    usedByTank[tank] += edge.originalCapacity - edge.capacity;
+                }
+            }
+        }
+        List<FluidUse> uses = new ArrayList<>();
+        for (int tank = 0; tank < tankCount; tank++) {
+            if (usedByTank[tank] > 0) {
+                uses.add(new FluidUse(tank, usedByTank[tank], fluids.get(tank).copyWithAmount(1)));
+            }
+        }
+        return List.copyOf(uses);
     }
 
     @Nullable
@@ -603,15 +729,22 @@ public final class SimulationRecipeResolver {
         private final int duration;
         private final List<StackUse> stackUses;
         private final List<CatalystUse> catalystUses;
-        private final List<ItemStack> results;
+        private final List<FluidUse> fluidUses;
+        private final List<ItemStack> itemResults;
+        private final List<FluidStack> fluidResults;
 
         private ExecutionPlan(ResourceLocation id, int duration, List<StackUse> stackUses,
-                              List<CatalystUse> catalystUses, List<ItemStack> results) {
+                              List<CatalystUse> catalystUses, List<FluidUse> fluidUses,
+                              List<ItemStack> itemResults, List<FluidStack> fluidResults) {
             this.id = id;
             this.duration = duration;
             this.stackUses = List.copyOf(stackUses);
             this.catalystUses = List.copyOf(catalystUses);
-            this.results = results.stream().filter(stack -> !stack.isEmpty()).map(ItemStack::copy).toList();
+            this.fluidUses = List.copyOf(fluidUses);
+            this.itemResults = itemResults.stream().filter(stack -> !stack.isEmpty())
+                    .map(ItemStack::copy).toList();
+            this.fluidResults = fluidResults.stream().filter(stack -> !stack.isEmpty())
+                    .map(FluidStack::copy).toList();
         }
 
         ResourceLocation id() {
@@ -622,11 +755,16 @@ public final class SimulationRecipeResolver {
             return duration;
         }
 
-        List<ItemStack> results() {
-            return results;
+        List<ItemStack> itemResults() {
+            return itemResults;
         }
 
-        boolean stillValid(List<? extends IInventorySlot> slots) {
+        List<FluidStack> fluidResults() {
+            return fluidResults;
+        }
+
+        boolean stillValid(List<? extends IInventorySlot> slots,
+                           List<? extends IExtendedFluidTank> fluidTanks) {
             for (StackUse use : stackUses) {
                 ItemStack current = slots.get(use.slot).getStack();
                 if (current.getCount() < use.count
@@ -640,12 +778,23 @@ public final class SimulationRecipeResolver {
                     return false;
                 }
             }
+            for (FluidUse use : fluidUses) {
+                FluidStack current = fluidTanks.get(use.tank).getFluid();
+                if (current.getAmount() < use.amount
+                        || !FluidStack.isSameFluidSameComponents(current, use.expected)) {
+                    return false;
+                }
+            }
             return true;
         }
 
-        void consume(List<? extends IInventorySlot> slots) {
+        void consume(List<? extends IInventorySlot> slots,
+                     List<? extends IExtendedFluidTank> fluidTanks) {
             for (StackUse use : stackUses) {
                 slots.get(use.slot).extractItem(use.count, Action.EXECUTE, AutomationType.INTERNAL);
+            }
+            for (FluidUse use : fluidUses) {
+                fluidTanks.get(use.tank).shrinkStack(use.amount, Action.EXECUTE);
             }
         }
     }
@@ -653,17 +802,38 @@ public final class SimulationRecipeResolver {
     private enum ModuleKind {
         DEPLOYER,
         PRESS,
-        SAW
+        SAW,
+        SPOUT
     }
 
     private record Requirement(Ingredient ingredient, int count, boolean consumed, int craftPosition) {
     }
 
+    private record FluidRequirement(SizedFluidIngredient ingredient) {
+    }
+
     private record Candidate(ResourceLocation id, String process, List<Requirement> requirements,
-                             List<DisplayOutput> displayOutputs, int sequenceSteps, int loops,
+                             List<FluidRequirement> fluidRequirements,
+                             List<DisplayOutput> displayOutputs, List<FluidStack> fluidOutputs,
+                             int sequenceSteps, int loops,
                              int complexity, int priority, int duration, ResultFactory resultFactory) {
+        private Candidate(ResourceLocation id, String process, List<Requirement> requirements,
+                          List<DisplayOutput> displayOutputs, int sequenceSteps, int loops,
+                          int complexity, int priority, int duration, ResultFactory resultFactory) {
+            this(id, process, requirements, List.of(), displayOutputs, List.of(),
+                    sequenceSteps, loops, complexity, priority, duration, resultFactory);
+        }
+
         int consumedPerRun() {
             return requirements.stream().filter(Requirement::consumed).mapToInt(Requirement::count).sum();
+        }
+
+        int fluidConsumedPerRun() {
+            return fluidRequirements.stream().mapToInt(value -> value.ingredient.amount()).sum();
+        }
+
+        List<FluidStack> displayFluidOutputs() {
+            return fluidOutputs;
         }
     }
 
@@ -685,9 +855,21 @@ public final class SimulationRecipeResolver {
         }
     }
 
+    public record DisplayFluidInput(SizedFluidIngredient ingredient) {
+    }
+
+    public record DisplayFluidOutput(FluidStack stack) {
+        public DisplayFluidOutput {
+            stack = stack.copy();
+        }
+    }
+
     public record DisplayRecipe(ResourceLocation id, Component processName, ItemStack module,
                                 ItemStack condition, List<DisplayInput> inputs,
-                                List<DisplayOutput> outputs, int sequenceSteps, int loops) {
+                                List<DisplayOutput> outputs,
+                                List<SizedFluidIngredient> fluidInputs,
+                                List<FluidStack> fluidOutputs,
+                                int sequenceSteps, int loops) {
         public DisplayRecipe {
             module = module.copyWithCount(1);
             condition = condition.copyWithCount(1);
@@ -695,6 +877,8 @@ public final class SimulationRecipeResolver {
             outputs = outputs.stream()
                     .map(output -> new DisplayOutput(output.stack, output.chance))
                     .toList();
+            fluidInputs = List.copyOf(fluidInputs);
+            fluidOutputs = fluidOutputs.stream().map(FluidStack::copy).toList();
         }
     }
 
@@ -702,6 +886,7 @@ public final class SimulationRecipeResolver {
         private final List<StackUse> stackUses;
         private final List<CatalystUse> catalystUses;
         private final List<ItemStack> assignedByRequirement;
+        private List<FluidUse> fluidUses = List.of();
         private Candidate candidate;
 
         private Match(List<StackUse> stackUses, List<CatalystUse> catalystUses,
@@ -723,9 +908,13 @@ public final class SimulationRecipeResolver {
     private record CatalystUse(int slot, ItemStack expected) {
     }
 
+    private record FluidUse(int tank, int amount, FluidStack expected) {
+    }
+
     private record CandidateMatch(Candidate candidate, Match match, int maximumRuns) {
         private static final Comparator<CandidateMatch> ORDER = Comparator
                 .comparingInt((CandidateMatch value) -> value.candidate.consumedPerRun())
+                .thenComparingInt(value -> value.candidate.fluidConsumedPerRun())
                 .thenComparingInt(value -> value.candidate.complexity)
                 .thenComparingInt(value -> value.candidate.requirements.size())
                 .thenComparingInt(CandidateMatch::maximumRuns)

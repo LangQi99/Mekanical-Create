@@ -2,6 +2,7 @@ package io.github.langqi99.mekanicalcreate.client.jei;
 
 import io.github.langqi99.mekanicalcreate.MekanicalCreate;
 import io.github.langqi99.mekanicalcreate.client.SimulationChamberScreen;
+import io.github.langqi99.mekanicalcreate.client.FluidMekanicalFactoryScreen;
 import io.github.langqi99.mekanicalcreate.content.SimulationRecipeResolver;
 import io.github.langqi99.mekanicalcreate.registry.ModBlocks;
 import io.github.langqi99.mekanicalcreate.registry.ModMenus;
@@ -38,6 +39,10 @@ public final class MekanicalCreateJeiPlugin implements IModPlugin {
         );
     }
 
+    private static ItemStack fluidFactoryStack() {
+        return new ItemStack(ModBlocks.FLUID_MEKANICAL_FACTORY.get());
+    }
+
     @NotNull
     @Override
     public ResourceLocation getPluginUid() {
@@ -46,8 +51,10 @@ public final class MekanicalCreateJeiPlugin implements IModPlugin {
 
     @Override
     public void registerCategories(IRecipeCategoryRegistration registration) {
-        registration.addRecipeCategories(new SimulationChamberRecipeCategory(
-                registration.getJeiHelpers().getGuiHelper(), chamberStack()));
+        var guiHelper = registration.getJeiHelpers().getGuiHelper();
+        registration.addRecipeCategories(
+                new SimulationChamberRecipeCategory(guiHelper, chamberStack(), false),
+                new SimulationChamberRecipeCategory(guiHelper, fluidFactoryStack(), true));
     }
 
     @Override
@@ -55,12 +62,17 @@ public final class MekanicalCreateJeiPlugin implements IModPlugin {
         ClientLevel level = Minecraft.getInstance().level;
         if (level != null) {
             registration.addRecipes(SimulationChamberRecipeCategory.TYPE,
-                    SimulationRecipeResolver.getDisplayRecipes(level));
+                    SimulationRecipeResolver.getDisplayRecipes(level, false));
+            registration.addRecipes(SimulationChamberRecipeCategory.FLUID_TYPE,
+                    SimulationRecipeResolver.getDisplayRecipes(level, true));
         }
         for (ItemStack factory : factoryStacks()) {
             registration.addItemStackInfo(factory,
                     net.minecraft.network.chat.Component.translatable("jei.mekanicalcreate.info"));
         }
+        registration.addItemStackInfo(fluidFactoryStack(),
+                net.minecraft.network.chat.Component.translatable(
+                        "jei.mekanicalcreate.fluid_info"));
     }
 
     @Override
@@ -68,17 +80,24 @@ public final class MekanicalCreateJeiPlugin implements IModPlugin {
         for (ItemStack factory : factoryStacks()) {
             registration.addRecipeCatalyst(factory, SimulationChamberRecipeCategory.TYPE);
         }
+        registration.addRecipeCatalyst(fluidFactoryStack(),
+                SimulationChamberRecipeCategory.FLUID_TYPE);
     }
 
     @Override
     public void registerGuiHandlers(IGuiHandlerRegistration registration) {
         registration.addRecipeClickArea(SimulationChamberScreen.class,
                 123, 55, 28, 8, SimulationChamberRecipeCategory.TYPE);
+        registration.addRecipeClickArea(FluidMekanicalFactoryScreen.class,
+                170, 55, 28, 8, SimulationChamberRecipeCategory.FLUID_TYPE);
     }
 
     @Override
     public void registerRecipeTransferHandlers(IRecipeTransferRegistration registration) {
         registration.addRecipeTransferHandler(new SimulationChamberTransferInfo<>(
-                ModMenus.SIMULATION_CHAMBER.get()));
+                ModMenus.SIMULATION_CHAMBER.get(), SimulationChamberRecipeCategory.TYPE));
+        registration.addRecipeTransferHandler(new SimulationChamberTransferInfo<>(
+                ModMenus.FLUID_MEKANICAL_FACTORY.get(),
+                SimulationChamberRecipeCategory.FLUID_TYPE));
     }
 }

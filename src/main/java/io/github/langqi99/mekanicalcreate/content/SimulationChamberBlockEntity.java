@@ -10,17 +10,22 @@ import mekanism.api.AutomationType;
 import mekanism.api.IContentsListener;
 import mekanism.api.RelativeSide;
 import mekanism.api.energy.IEnergyContainer;
+import mekanism.api.fluid.IExtendedFluidTank;
 import mekanism.api.inventory.IInventorySlot;
 import mekanism.api.tier.BaseTier;
 import mekanism.common.block.attribute.Attribute;
 import mekanism.common.capabilities.energy.MachineEnergyContainer;
+import mekanism.common.capabilities.fluid.BasicFluidTank;
 import mekanism.common.capabilities.holder.energy.EnergyContainerHelper;
 import mekanism.common.capabilities.holder.energy.IEnergyContainerHolder;
+import mekanism.common.capabilities.holder.fluid.FluidTankHelper;
+import mekanism.common.capabilities.holder.fluid.IFluidTankHolder;
 import mekanism.common.capabilities.holder.slot.IInventorySlotHolder;
 import mekanism.common.capabilities.holder.slot.InventorySlotHelper;
 import mekanism.common.inventory.container.MekanismContainer;
 import mekanism.common.inventory.container.slot.ContainerSlotType;
 import mekanism.common.inventory.container.slot.InventoryContainerSlot;
+import mekanism.common.inventory.container.slot.SlotOverlay;
 import mekanism.common.inventory.container.sync.SyncableInt;
 import mekanism.common.inventory.slot.BasicInventorySlot;
 import mekanism.common.inventory.slot.EnergyInventorySlot;
@@ -33,7 +38,9 @@ import mekanism.common.tile.component.ITileComponent;
 import mekanism.common.tile.component.config.ConfigInfo;
 import mekanism.common.tile.component.config.DataType;
 import mekanism.common.tile.component.config.slot.InventorySlotInfo;
+import mekanism.common.tile.component.config.slot.FluidSlotInfo;
 import mekanism.common.tile.prefab.TileEntityConfigurableMachine;
+import mekanism.common.tile.interfaces.IBoundingBlock;
 import mekanism.common.util.MekanismUtils;
 import mekanism.common.upgrade.IUpgradeData;
 import mekanism.common.upgrade.MachineUpgradeData;
@@ -47,14 +54,20 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.neoforge.capabilities.BlockCapability;
 import net.neoforged.neoforge.items.ItemHandlerHelper;
 import net.neoforged.neoforge.items.ItemStackHandler;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.FluidType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine {
+public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine implements IBoundingBlock {
     public static final int INPUT_COUNT = 16;
     public static final int OUTPUT_COUNT = 4;
+    public static final int INPUT_FLUID_TANK_COUNT = 2;
+    public static final int OUTPUT_FLUID_TANK_COUNT = 2;
+    public static final int FLUID_TANK_CAPACITY = 10 * FluidType.BUCKET_VOLUME;
     private static final long BASE_ENERGY_CAPACITY = 100_000L;
     private static final long BASE_ENERGY_USAGE = 100L;
     private static final int DEFAULT_DURATION = 100;
@@ -63,8 +76,12 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     private EnergyInventorySlot energySlot;
     private BasicInventorySlot moduleSlot;
     private BasicInventorySlot conditionSlot;
+    private MultiTankFluidInventorySlot fluidContainerSlot;
+    private OutputInventorySlot fluidContainerOutputSlot;
     private List<InputInventorySlot> inputSlots;
     private List<OutputInventorySlot> outputSlots;
+    private List<IExtendedFluidTank> inputFluidTanks;
+    private List<IExtendedFluidTank> outputFluidTanks;
 
     private int progress;
     private int duration = DEFAULT_DURATION;
@@ -82,8 +99,20 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         configComponent.setupItemIOConfig(List.copyOf(inputSlots), List.copyOf(outputSlots), energySlot, false);
         ConfigInfo itemConfig = configComponent.getConfig(TransmissionType.ITEM);
         if (itemConfig != null) {
+            List<IInventorySlot> extraSlots = new ArrayList<>();
+            extraSlots.add(moduleSlot);
+            extraSlots.add(conditionSlot);
+            if (supportsFluids()) {
+                extraSlots.add(fluidContainerSlot);
+            }
             itemConfig.addSlotInfo(DataType.EXTRA,
-                    new InventorySlotInfo(true, true, List.of(moduleSlot, conditionSlot)));
+                    new InventorySlotInfo(true, true, extraSlots));
+            List<IInventorySlot> configuredOutputs = new ArrayList<>(outputSlots);
+            if (supportsFluids()) {
+                configuredOutputs.add(fluidContainerOutputSlot);
+            }
+            itemConfig.addSlotInfo(DataType.OUTPUT,
+                    new InventorySlotInfo(false, true, configuredOutputs));
             for (RelativeSide side : RelativeSide.values()) {
                 itemConfig.setDataType(DataType.INPUT, side);
             }
@@ -97,9 +126,26 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                 energyConfig.setDataType(DataType.INPUT, side);
             }
         }
+        ConfigInfo fluidConfig = supportsFluids()
+                ? configComponent.getConfig(TransmissionType.FLUID) : null;
+        if (fluidConfig != null && inputFluidTanks != null && outputFluidTanks != null) {
+            fluidConfig.addSlotInfo(DataType.INPUT,
+                    new FluidSlotInfo(true, false, inputFluidTanks));
+            fluidConfig.addSlotInfo(DataType.OUTPUT,
+                    new FluidSlotInfo(false, true, outputFluidTanks));
+            for (RelativeSide side : RelativeSide.values()) {
+                fluidConfig.setDataType(DataType.INPUT, side);
+            }
+            fluidConfig.setDataType(DataType.OUTPUT, RelativeSide.RIGHT);
+            fluidConfig.setEjecting(true);
+        }
 
         ejectorComponent = new TileComponentEjector(this);
-        ejectorComponent.setOutputData(configComponent, TransmissionType.ITEM);
+        if (supportsFluids()) {
+            ejectorComponent.setOutputData(configComponent, TransmissionType.ITEM, TransmissionType.FLUID);
+        } else {
+            ejectorComponent.setOutputData(configComponent, TransmissionType.ITEM);
+        }
     }
 
     public static long getBaseEnergyCapacity() {
@@ -138,6 +184,30 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         return builder.build();
     }
 
+    @Override
+    @Nullable
+    protected IFluidTankHolder getInitialFluidTanks(IContentsListener listener) {
+        if (!supportsFluids()) {
+            return null;
+        }
+        inputFluidTanks = new ArrayList<>(INPUT_FLUID_TANK_COUNT);
+        outputFluidTanks = new ArrayList<>(OUTPUT_FLUID_TANK_COUNT);
+        IContentsListener inputListener = () -> {
+            listener.onContentsChanged();
+            planDirty = true;
+        };
+        FluidTankHelper builder = FluidTankHelper.forSideWithConfig(this);
+        for (int tank = 0; tank < INPUT_FLUID_TANK_COUNT; tank++) {
+            inputFluidTanks.add(builder.addTank(BasicFluidTank.input(
+                    FLUID_TANK_CAPACITY, fluid -> true, inputListener)));
+        }
+        for (int tank = 0; tank < OUTPUT_FLUID_TANK_COUNT; tank++) {
+            outputFluidTanks.add(builder.addTank(BasicFluidTank.output(
+                    FLUID_TANK_CAPACITY, listener)));
+        }
+        return builder.build();
+    }
+
     @NotNull
     @Override
     protected IInventorySlotHolder getInitialInventory(IContentsListener listener) {
@@ -155,7 +225,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
 
         InventorySlotHelper builder = InventorySlotHelper.forSideWithConfig(this);
         moduleSlot = builder.addSlot(BasicInventorySlot.at(
-                SimulationChamberBlockEntity::isSupportedModule, configurationListener, 25, 24, 1));
+                this::isSupportedModule, configurationListener, 25, 24, 1));
         conditionSlot = builder.addSlot(new BasicInventorySlot(1,
                 (stack, automation) -> true,
                 (stack, automation) -> isFanModuleInstalled(),
@@ -180,8 +250,16 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             int y = 24 + (input / 4) * 18;
             inputSlots.add(builder.addSlot(InputInventorySlot.at(inputListener, x, y)));
         }
+        int outputX = supportsFluids() ? 246 : 154;
         for (int output = 0; output < OUTPUT_COUNT; output++) {
-            outputSlots.add(builder.addSlot(OutputInventorySlot.at(listener, 154, 24 + output * 18)));
+            outputSlots.add(builder.addSlot(OutputInventorySlot.at(listener, outputX, 24 + output * 18)));
+        }
+        if (supportsFluids()) {
+            fluidContainerSlot = builder.addSlot(new MultiTankFluidInventorySlot(
+                    inputFluidTanks, outputFluidTanks, listener, 138, 60));
+            fluidContainerSlot.setSlotOverlay(SlotOverlay.PLUS);
+            fluidContainerOutputSlot = builder.addSlot(OutputInventorySlot.at(listener, 212, 60));
+            fluidContainerOutputSlot.setSlotOverlay(SlotOverlay.MINUS);
         }
         energySlot = builder.addSlot(EnergyInventorySlot.fillOrConvert(
                 energyContainer, this::getLevel, listener, 6, 80));
@@ -192,6 +270,9 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     protected boolean onUpdateServer() {
         boolean sendUpdatePacket = super.onUpdateServer();
         energySlot.fillContainerOrConvert();
+        if (supportsFluids()) {
+            fluidContainerSlot.handleContainer(fluidContainerOutputSlot);
+        }
 
         Level level = getLevel();
         if (level == null || !canFunction()) {
@@ -200,7 +281,8 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         }
 
         if (activePlan != null && planDirty) {
-            if (!activePlan.stillValid(inputSlots)) {
+            if (!activePlan.stillValid(inputSlots,
+                    supportsFluids() ? inputFluidTanks : List.of())) {
                 invalidatePlan();
             } else {
                 planDirty = false;
@@ -209,7 +291,8 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
 
         if (activePlan == null) {
             activePlan = SimulationRecipeResolver.resolve(
-                    level, moduleSlot.getStack(), conditionSlot.getStack(), inputSlots).orElse(null);
+                    level, moduleSlot.getStack(), conditionSlot.getStack(), inputSlots,
+                    supportsFluids() ? inputFluidTanks : List.of(), supportsFluids()).orElse(null);
             if (activePlan == null) {
                 resetIdle();
                 return sendUpdatePacket;
@@ -219,7 +302,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             planDirty = false;
         }
 
-        if (!canFit(activePlan.results())) {
+        if (!canFit(activePlan.itemResults(), activePlan.fluidResults())) {
             setActive(false);
             return sendUpdatePacket;
         }
@@ -234,13 +317,16 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         setActive(true);
         progress++;
         if (progress >= duration) {
-            if (!activePlan.stillValid(inputSlots) || !canFit(activePlan.results())) {
+            if (!activePlan.stillValid(inputSlots,
+                    supportsFluids() ? inputFluidTanks : List.of())
+                    || !canFit(activePlan.itemResults(), activePlan.fluidResults())) {
                 invalidatePlan();
                 setActive(false);
                 return sendUpdatePacket;
             }
-            activePlan.consume(inputSlots);
-            insertResults(activePlan.results());
+            activePlan.consume(inputSlots, supportsFluids() ? inputFluidTanks : List.of());
+            insertResults(activePlan.itemResults());
+            insertFluidResults(activePlan.fluidResults());
             activePlan = null;
             progress = 0;
             duration = DEFAULT_DURATION;
@@ -262,7 +348,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         }
     }
 
-    private boolean canFit(List<ItemStack> results) {
+    private boolean canFit(List<ItemStack> results, List<FluidStack> fluidResults) {
         ItemStackHandler simulation = new ItemStackHandler(OUTPUT_COUNT);
         for (int slot = 0; slot < OUTPUT_COUNT; slot++) {
             simulation.setStackInSlot(slot, outputSlots.get(slot).getStack().copy());
@@ -272,7 +358,49 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                 return false;
             }
         }
+        if (!supportsFluids()) {
+            return fluidResults.isEmpty();
+        }
+        List<FluidStack> simulated = outputFluidTanks.stream()
+                .map(tank -> tank.getFluid().copy()).collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        for (FluidStack result : fluidResults) {
+            int remaining = result.getAmount();
+            for (int index = 0; index < simulated.size() && remaining > 0; index++) {
+                FluidStack stored = simulated.get(index);
+                if (!stored.isEmpty() && FluidStack.isSameFluidSameComponents(stored, result)) {
+                    int accepted = Math.min(remaining,
+                            outputFluidTanks.get(index).getCapacity() - stored.getAmount());
+                    stored.grow(accepted);
+                    remaining -= accepted;
+                }
+            }
+            for (int index = 0; index < simulated.size() && remaining > 0; index++) {
+                if (simulated.get(index).isEmpty()) {
+                    int accepted = Math.min(remaining, outputFluidTanks.get(index).getCapacity());
+                    simulated.set(index, result.copyWithAmount(accepted));
+                    remaining -= accepted;
+                }
+            }
+            if (remaining > 0) {
+                return false;
+            }
+        }
         return true;
+    }
+
+    private void insertFluidResults(List<FluidStack> results) {
+        if (!supportsFluids()) {
+            return;
+        }
+        for (FluidStack result : results) {
+            FluidStack remainder = result.copy();
+            for (IExtendedFluidTank tank : outputFluidTanks) {
+                remainder = tank.insert(remainder, Action.EXECUTE, AutomationType.INTERNAL);
+                if (remainder.isEmpty()) {
+                    break;
+                }
+            }
+        }
     }
 
     private void resetIdle() {
@@ -323,6 +451,32 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         return List.copyOf(inputSlots);
     }
 
+    public List<IExtendedFluidTank> getInputFluidTanks() {
+        return supportsFluids() ? List.copyOf(inputFluidTanks) : List.of();
+    }
+
+    public List<IExtendedFluidTank> getOutputFluidTanks() {
+        return supportsFluids() ? List.copyOf(outputFluidTanks) : List.of();
+    }
+
+    public boolean supportsFluids() {
+        return getBlockHolder() == ModBlocks.FLUID_MEKANICAL_FACTORY;
+    }
+
+    /**
+     * Mekanism's bounding blocks forward automation to the controller. The fluid
+     * factory deliberately exposes the same configured capabilities from every
+     * part of its 3 x 2 x 3 footprint, matching other large Mekanism machines.
+     */
+    @Nullable
+    @Override
+    public <T> T getOffsetCapabilityIfEnabled(BlockCapability<T, net.minecraft.core.Direction> capability,
+                                              net.minecraft.core.Direction side,
+                                              net.minecraft.core.Vec3i offset) {
+        Level level = getLevel();
+        return level == null ? null : level.getCapability(capability, getBlockPos(), side);
+    }
+
     public MachineEnergyContainer<SimulationChamberBlockEntity> getEnergyContainer() {
         return energyContainer;
     }
@@ -363,23 +517,61 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     @NotNull
     @Override
     public MachineUpgradeData getUpgradeData(HolderLookup.Provider provider) {
-        List<IInventorySlot> storedInputs = new ArrayList<>(INPUT_COUNT + 2);
+        if (!supportsFluids()) {
+            List<IInventorySlot> storedInputs = new ArrayList<>(INPUT_COUNT + 2);
+            storedInputs.add(moduleSlot);
+            storedInputs.add(conditionSlot);
+            storedInputs.addAll(inputSlots);
+            return new MachineUpgradeData(provider, redstone, getControlType(), energyContainer,
+                    new int[]{progress}, energySlot, storedInputs,
+                    new ArrayList<>(outputSlots), false, getComponents());
+        }
+        List<IInventorySlot> storedInputs = new ArrayList<>(INPUT_COUNT + 3);
         storedInputs.add(moduleSlot);
         storedInputs.add(conditionSlot);
         storedInputs.addAll(inputSlots);
+        storedInputs.add(fluidContainerSlot);
         List<IInventorySlot> storedOutputs = new ArrayList<>(outputSlots);
-        return new MachineUpgradeData(provider, redstone, getControlType(), energyContainer,
-                new int[]{progress}, energySlot, storedInputs, storedOutputs, false, getComponents());
+        storedOutputs.add(fluidContainerOutputSlot);
+        List<IExtendedFluidTank> storedFluids = new ArrayList<>(inputFluidTanks);
+        storedFluids.addAll(outputFluidTanks);
+        return new SimulationChamberUpgradeData(provider, redstone, getControlType(), energyContainer,
+                new int[]{progress}, energySlot, storedInputs, storedOutputs, storedFluids, getComponents());
     }
 
     @Override
     public void parseUpgradeData(HolderLookup.Provider provider, @NotNull IUpgradeData upgradeData) {
-        if (!(upgradeData instanceof MachineUpgradeData data)
-                || data.inputSlots.size() != INPUT_COUNT + 2
-                || data.outputSlots.size() != OUTPUT_COUNT) {
+        if (!supportsFluids() && upgradeData instanceof MachineUpgradeData data
+                && data.inputSlots.size() == INPUT_COUNT + 2
+                && data.outputSlots.size() == OUTPUT_COUNT) {
+            restoreCommonUpgradeData(provider, data);
+            return;
+        }
+        if (!(upgradeData instanceof SimulationChamberUpgradeData data)
+                || data.inputSlots.size() != INPUT_COUNT + 3
+                || data.outputSlots.size() != OUTPUT_COUNT + 1
+                || data.fluids.size() != INPUT_FLUID_TANK_COUNT + OUTPUT_FLUID_TANK_COUNT) {
             super.parseUpgradeData(provider, upgradeData);
             return;
         }
+        restoreCommonUpgradeData(provider, data);
+        fluidContainerSlot.deserializeNBT(provider,
+                data.inputSlots.get(INPUT_COUNT + 2).serializeNBT(provider));
+        fluidContainerOutputSlot.deserializeNBT(provider,
+                data.outputSlots.get(OUTPUT_COUNT).serializeNBT(provider));
+        List<IExtendedFluidTank> allFluidTanks = new ArrayList<>(inputFluidTanks);
+        allFluidTanks.addAll(outputFluidTanks);
+        for (int index = 0; index < allFluidTanks.size(); index++) {
+            allFluidTanks.get(index).setStackUnchecked(data.fluids.get(index).copy());
+        }
+        Level level = getLevel();
+        if (level != null && !level.isClientSide()) {
+            level.playSound(null, getBlockPos(), MekanismSounds.HYDRAULIC.get(),
+                    SoundSource.BLOCKS, 0.8F, 1.0F);
+        }
+    }
+
+    private void restoreCommonUpgradeData(HolderLookup.Provider provider, MachineUpgradeData data) {
         redstone = data.redstone;
         setControlType(data.controlType);
         energyContainer.setEnergy(data.energyContainer.getEnergy());
@@ -401,21 +593,19 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         duration = DEFAULT_DURATION;
         activePlan = null;
         planDirty = true;
-        Level level = getLevel();
-        if (level != null && !level.isClientSide()) {
-            level.playSound(null, getBlockPos(), MekanismSounds.HYDRAULIC.get(),
-                    SoundSource.BLOCKS, 0.8F, 1.0F);
-        }
     }
 
-    private static boolean isSupportedModule(ItemStack stack) {
-        return stack.is(AllBlocks.DEPLOYER.asItem())
+    private boolean isSupportedModule(ItemStack stack) {
+        boolean common = stack.is(AllBlocks.DEPLOYER.asItem())
                 || stack.is(AllBlocks.MECHANICAL_SAW.asItem())
                 || stack.is(AllBlocks.MECHANICAL_PRESS.asItem())
                 || stack.is(AllBlocks.MILLSTONE.asItem())
                 || stack.is(AllBlocks.CRUSHING_WHEEL.asItem())
                 || stack.is(AllBlocks.ENCASED_FAN.asItem())
                 || stack.is(AllBlocks.MECHANICAL_CRAFTER.asItem());
+        return common || supportsFluids() && (stack.is(AllBlocks.MECHANICAL_MIXER.asItem())
+                || stack.is(AllBlocks.SPOUT.asItem())
+                || stack.is(AllBlocks.ITEM_DRAIN.asItem()));
     }
 
     private static boolean isSupportedCondition(ItemStack stack) {

@@ -1,0 +1,27 @@
+{
+  "loader": "neoforge:composite",
+  "parent": "block/block",
+  "render_type": "minecraft:cutout",
+  "gui_light": "side",
+  "textures": {
+    "particle": "mekanism:block/models/digital_miner"
+  },
+  "children": {
+    "digital_miner_chassis": {
+      "parent": "mekanism:block/digital_miner"
+    },
+    "fluid_processing_array": {
+      "parent": "mekanicalcreate:block/fluid_mekanical_factory_fluid_details"
+    }
+  },
+  "display": {
+    "thirdperson_righthand": { "rotation": [75, 45, 0], "translation": [0, 5.5, -0.5], "scale": [0.2, 0.2, 0.2] },
+    "thirdperson_lefthand": { "rotation": [75, 45, 0], "translation": [0, 5.5, -0.5], "scale": [0.2, 0.2, 0.2] },
+    "firstperson_righthand": { "rotation": [0, 135, 0], "translation": [0, 0.5, 0.75], "scale": [0.2, 0.2, 0.2] },
+    "firstperson_lefthand": { "rotation": [0, 135, 0], "translation": [0, 0.5, 0.75], "scale": [0.2, 0.2, 0.2] },
+    "ground": { "translation": [0, 3, 0], "scale": [0.25, 0.25, 0.25] },
+    "gui": { "rotation": [30, 225, 0], "translation": [0.25, -2, 0], "scale": [0.25, 0.25, 0.25] },
+    "head": { "translation": [0, 9.25, -1], "scale": [0.3, 0.3, 0.3] },
+    "fixed": { "translation": [0, -1.75, 0.75], "scale": [0.25, 0.25, 0.25] }
+  }
+}

@@ -1,6 +1,8 @@
 {
   "block.mekanicalcreate.simulation_chamber": "Mekanical Factory",
   "container.mekanicalcreate.simulation_chamber": "Mekanical Factory",
+  "block.mekanicalcreate.fluid_mekanical_factory": "Fluid Mekanical Factory",
+  "container.mekanicalcreate.fluid_mekanical_factory": "Fluid Mekanical Factory",
   "block.mekanicalcreate.basic_mekanical_factory": "Basic Mekanical Factory",
   "container.mekanicalcreate.basic_mekanical_factory": "Basic Mekanical Factory",
   "block.mekanicalcreate.advanced_mekanical_factory": "Advanced Mekanical Factory",
@@ -10,9 +12,12 @@
   "block.mekanicalcreate.ultimate_mekanical_factory": "Ultimate Mekanical Factory",
   "container.mekanicalcreate.ultimate_mekanical_factory": "Ultimate Mekanical Factory",
   "description.mekanicalcreate.simulation_chamber": "Centralizes Create processing in a Mekanism-style factory.",
+  "description.mekanicalcreate.fluid_mekanical_factory": "Adds four fluid tanks for centralized Create item and fluid processing.",
   "itemGroup.mekanicalcreate": "Mekanical Create",
   "jei.mekanicalcreate.simulation_chamber": "Mekanical Factory",
+  "jei.mekanicalcreate.fluid_mekanical_factory": "Fluid Mekanical Factory",
   "jei.mekanicalcreate.info": "Centralizes supported Create processing recipes with configurable modules and Mekanism-style automation; accepts Mekanism factory installers for tier upgrades.",
+  "jei.mekanicalcreate.fluid_info": "The fluid variant has two input and two output tanks for mixing, compacting, filling, emptying, and fluid sequenced assembly steps.",
   "jei.mekanicalcreate.slot.input": "Unordered material input",
   "jei.mekanicalcreate.slot.module": "Machine module (not consumed)",
   "jei.mekanicalcreate.slot.condition": "Fan condition (not consumed)",
@@ -30,5 +35,9 @@
   "jei.mekanicalcreate.process.fan_blasting": "Fan Blasting",
   "jei.mekanicalcreate.process.sequenced_assembly": "Flattened Sequenced Assembly",
   "jei.mekanicalcreate.process.crafting": "Unordered Crafting",
-  "jei.mekanicalcreate.process.mechanical_crafting": "Unordered Mechanical Crafting"
+  "jei.mekanicalcreate.process.mechanical_crafting": "Unordered Mechanical Crafting",
+  "jei.mekanicalcreate.process.mixing": "Mixing",
+  "jei.mekanicalcreate.process.compacting": "Compacting",
+  "jei.mekanicalcreate.process.filling": "Filling",
+  "jei.mekanicalcreate.process.emptying": "Emptying"
 }

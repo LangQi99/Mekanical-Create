@@ -1,6 +1,8 @@
 {
   "block.mekanicalcreate.simulation_chamber": "通用动力工厂",
   "container.mekanicalcreate.simulation_chamber": "通用动力工厂",
+  "block.mekanicalcreate.fluid_mekanical_factory": "流体通用动力工厂",
+  "container.mekanicalcreate.fluid_mekanical_factory": "流体通用动力工厂",
   "block.mekanicalcreate.basic_mekanical_factory": "基础通用动力工厂",
   "container.mekanicalcreate.basic_mekanical_factory": "基础通用动力工厂",
   "block.mekanicalcreate.advanced_mekanical_factory": "高级通用动力工厂",
@@ -10,9 +12,12 @@
   "block.mekanicalcreate.ultimate_mekanical_factory": "终极通用动力工厂",
   "container.mekanicalcreate.ultimate_mekanical_factory": "终极通用动力工厂",
   "description.mekanicalcreate.simulation_chamber": "在通用机械式工厂中集中执行机械动力加工。",
+  "description.mekanicalcreate.fluid_mekanical_factory": "配备四个流体罐，可集中执行机械动力的物品与流体加工。",
   "itemGroup.mekanicalcreate": "通用动力",
   "jei.mekanicalcreate.simulation_chamber": "通用动力工厂",
+  "jei.mekanicalcreate.fluid_mekanical_factory": "流体通用动力工厂",
   "jei.mekanicalcreate.info": "通过可配置模块与通用机械式自动化集中执行支持的机械动力加工配方；可使用通用机械的工厂安装器逐级升级。",
+  "jei.mekanicalcreate.fluid_info": "流体版通用动力工厂，拥有两个输入罐和两个输出罐，支持搅拌、压块、注液、排液及带注液步骤的序列组装。",
   "jei.mekanicalcreate.slot.input": "无序材料输入",
   "jei.mekanicalcreate.slot.module": "机器模块（不消耗）",
   "jei.mekanicalcreate.slot.condition": "鼓风条件（不消耗）",
@@ -30,5 +35,9 @@
   "jei.mekanicalcreate.process.fan_blasting": "鼓风机熔炼",
   "jei.mekanicalcreate.process.sequenced_assembly": "展开后的序列组装",
   "jei.mekanicalcreate.process.crafting": "无序合成",
-  "jei.mekanicalcreate.process.mechanical_crafting": "无序动力合成"
+  "jei.mekanicalcreate.process.mechanical_crafting": "无序动力合成",
+  "jei.mekanicalcreate.process.mixing": "动力搅拌",
+  "jei.mekanicalcreate.process.compacting": "动力压块",
+  "jei.mekanicalcreate.process.filling": "注液",
+  "jei.mekanicalcreate.process.emptying": "排液"
 }

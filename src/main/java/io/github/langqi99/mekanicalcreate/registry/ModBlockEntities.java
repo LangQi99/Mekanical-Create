@@ -18,6 +18,15 @@ public final class ModBlockEntities {
             .withSimple(Capabilities.CONFIG_CARD)
             .build();
 
+    public static final TileEntityTypeRegistryObject<SimulationChamberBlockEntity> FLUID_MEKANICAL_FACTORY = TYPES
+            .mekBuilder(ModBlocks.FLUID_MEKANICAL_FACTORY,
+                    (pos, state) -> new SimulationChamberBlockEntity(
+                            ModBlocks.FLUID_MEKANICAL_FACTORY, pos, state))
+            .clientTicker(TileEntityMekanism::tickClient)
+            .serverTicker(TileEntityMekanism::tickServer)
+            .withSimple(Capabilities.CONFIG_CARD)
+            .build();
+
     public static final TileEntityTypeRegistryObject<SimulationChamberBlockEntity> BASIC_MEKANICAL_FACTORY = TYPES
             .mekBuilder(ModBlocks.BASIC_MEKANICAL_FACTORY,
                     (pos, state) -> new SimulationChamberBlockEntity(ModBlocks.BASIC_MEKANICAL_FACTORY, pos, state))

@@ -15,5 +15,6 @@ public final class MekanicalCreateClient {
 
     private void registerScreens(RegisterMenuScreensEvent event) {
         event.register(ModMenus.SIMULATION_CHAMBER.get(), SimulationChamberScreen::new);
+        event.register(ModMenus.FLUID_MEKANICAL_FACTORY.get(), FluidMekanicalFactoryScreen::new);
     }
 }

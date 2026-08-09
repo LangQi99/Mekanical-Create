@@ -15,6 +15,11 @@ public final class ModMenus {
             .offset(0, 36)
             .build();
 
+    public static final ContainerTypeRegistryObject<MekanismTileContainer<SimulationChamberBlockEntity>> FLUID_MEKANICAL_FACTORY = MENUS
+            .custom("fluid_mekanical_factory", SimulationChamberBlockEntity.class)
+            .offset(46, 36)
+            .build();
+
     private ModMenus() {
     }
 

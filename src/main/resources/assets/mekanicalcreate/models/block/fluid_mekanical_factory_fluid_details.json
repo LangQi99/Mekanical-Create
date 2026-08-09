@@ -1,0 +1,89 @@
+{
+  "credit": "Mekanical Create fluid processing array",
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "frame": "mekanism:block/steel_casing",
+    "tank": "mekanism:block/dynamic_tank",
+    "glass": "minecraft:block/light_blue_stained_glass",
+    "pipe": "mekanism:block/models/fluid_tank",
+    "port": "mekanism:block/models/ports",
+    "led": "mekanism:block/models/ports_led",
+    "particle": "mekanism:block/models/digital_miner"
+  },
+  "elements": [
+    {
+      "name": "left_tank_back",
+      "from": [-7, 4, -10], "to": [1, 15, -8],
+      "faces": {
+        "north": { "texture": "#tank" }, "east": { "texture": "#frame" },
+        "south": { "texture": "#frame" }, "west": { "texture": "#frame" },
+        "up": { "texture": "#frame" }, "down": { "texture": "#frame" }
+      }
+    },
+    {
+      "name": "left_tank_glass",
+      "from": [-5.75, 5.5, -11.01], "to": [-0.25, 13.5, -10.01],
+      "shade": false,
+      "faces": { "north": { "texture": "#glass" }, "east": { "texture": "#glass" }, "west": { "texture": "#glass" }, "up": { "texture": "#glass" }, "down": { "texture": "#glass" } }
+    },
+    {
+      "name": "left_tank_top_rail",
+      "from": [-7.5, 13.5, -11.5], "to": [1.5, 15.5, -9.5],
+      "faces": { "north": { "texture": "#frame" }, "east": { "texture": "#frame" }, "south": { "texture": "#frame" }, "west": { "texture": "#frame" }, "up": { "texture": "#frame" }, "down": { "texture": "#frame" } }
+    },
+    {
+      "name": "left_tank_bottom_rail",
+      "from": [-7.5, 3.5, -11.5], "to": [1.5, 5.5, -9.5],
+      "faces": { "north": { "texture": "#frame" }, "east": { "texture": "#frame" }, "south": { "texture": "#frame" }, "west": { "texture": "#frame" }, "up": { "texture": "#frame" }, "down": { "texture": "#frame" } }
+    },
+    {
+      "name": "right_tank_back",
+      "from": [15, 4, -10], "to": [23, 15, -8],
+      "faces": {
+        "north": { "texture": "#tank" }, "east": { "texture": "#frame" },
+        "south": { "texture": "#frame" }, "west": { "texture": "#frame" },
+        "up": { "texture": "#frame" }, "down": { "texture": "#frame" }
+      }
+    },
+    {
+      "name": "right_tank_glass",
+      "from": [16.25, 5.5, -11.01], "to": [21.75, 13.5, -10.01],
+      "shade": false,
+      "faces": { "north": { "texture": "#glass" }, "east": { "texture": "#glass" }, "west": { "texture": "#glass" }, "up": { "texture": "#glass" }, "down": { "texture": "#glass" } }
+    },
+    {
+      "name": "right_tank_top_rail",
+      "from": [14.5, 13.5, -11.5], "to": [23.5, 15.5, -9.5],
+      "faces": { "north": { "texture": "#frame" }, "east": { "texture": "#frame" }, "south": { "texture": "#frame" }, "west": { "texture": "#frame" }, "up": { "texture": "#frame" }, "down": { "texture": "#frame" } }
+    },
+    {
+      "name": "right_tank_bottom_rail",
+      "from": [14.5, 3.5, -11.5], "to": [23.5, 5.5, -9.5],
+      "faces": { "north": { "texture": "#frame" }, "east": { "texture": "#frame" }, "south": { "texture": "#frame" }, "west": { "texture": "#frame" }, "up": { "texture": "#frame" }, "down": { "texture": "#frame" } }
+    },
+    {
+      "name": "left_manifold",
+      "from": [-3, 7, -9], "to": [3, 10, 4],
+      "faces": { "north": { "texture": "#pipe" }, "east": { "texture": "#pipe" }, "south": { "texture": "#port" }, "west": { "texture": "#pipe" }, "up": { "texture": "#pipe" }, "down": { "texture": "#pipe" } }
+    },
+    {
+      "name": "right_manifold",
+      "from": [13, 7, -9], "to": [19, 10, 4],
+      "faces": { "north": { "texture": "#pipe" }, "east": { "texture": "#pipe" }, "south": { "texture": "#port" }, "west": { "texture": "#pipe" }, "up": { "texture": "#pipe" }, "down": { "texture": "#pipe" } }
+    },
+    {
+      "name": "left_status_led",
+      "from": [-4.5, 8, -11.52], "to": [-1.5, 11, -11.48],
+      "shade": false,
+      "faces": { "north": { "uv": [8, 8, 16, 16], "texture": "#led" } },
+      "neoforge_data": { "block_light": 15, "sky_light": 15 }
+    },
+    {
+      "name": "right_status_led",
+      "from": [17.5, 8, -11.52], "to": [20.5, 11, -11.48],
+      "shade": false,
+      "faces": { "north": { "uv": [8, 8, 16, 16], "texture": "#led" } },
+      "neoforge_data": { "block_light": 15, "sky_light": 15 }
+    }
+  ]
+}

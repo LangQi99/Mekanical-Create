@@ -1,0 +1,17 @@
+{
+  "loader": "neoforge:composite",
+  "parent": "block/block",
+  "render_type": "minecraft:cutout",
+  "gui_light": "side",
+  "textures": {
+    "particle": "mekanism:block/models/digital_miner"
+  },
+  "children": {
+    "digital_miner_chassis": {
+      "parent": "mekanism:block/digital_miner_active"
+    },
+    "fluid_processing_array": {
+      "parent": "mekanicalcreate:block/fluid_mekanical_factory_fluid_details"
+    }
+  }
+}
