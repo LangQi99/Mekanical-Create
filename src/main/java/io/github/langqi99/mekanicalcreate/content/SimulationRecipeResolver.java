@@ -66,7 +66,7 @@ public final class SimulationRecipeResolver {
                                            List<? extends IInventorySlot> inputSlots,
                                            List<? extends IExtendedFluidTank> inputFluidTanks,
                                            boolean allowFluidProcessing) {
-        if (module.isEmpty()) {
+        if (module.isEmpty() || !isSupportedModule(level, module, allowFluidProcessing)) {
             return Optional.empty();
         }
         return resolve(level, inputSlots, inputFluidTanks,
@@ -92,7 +92,7 @@ public final class SimulationRecipeResolver {
                 .toList();
         List<Candidate> candidates = new ArrayList<>();
         for (ItemStack module : catalysts) {
-            if (!isSupportedModule(module)) {
+            if (!isSupportedModule(level, module, allowFluidProcessing)) {
                 continue;
             }
             if (module.is(AllBlocks.ENCASED_FAN.asItem())) {
@@ -124,6 +124,7 @@ public final class SimulationRecipeResolver {
         }
         List<ItemStack> results = best.candidate.resultFactory.apply(level, best.match);
         return Optional.of(new ExecutionPlan(best.candidate.id, best.candidate.duration,
+                best.candidate.energyPerTick,
                 best.match.stackUses, best.match.catalystUses, best.match.fluidUses,
                 results, best.candidate.fluidOutputs));
     }
@@ -139,17 +140,21 @@ public final class SimulationRecipeResolver {
         return distinct;
     }
 
-    private static boolean isSupportedModule(ItemStack stack) {
-        return stack.is(AllBlocks.DEPLOYER.asItem())
+    static boolean isSupportedModule(Level level, ItemStack stack,
+                                     boolean allowFluidProcessing) {
+        boolean common = stack.is(AllBlocks.DEPLOYER.asItem())
                 || stack.is(AllBlocks.MECHANICAL_SAW.asItem())
                 || stack.is(AllBlocks.MECHANICAL_PRESS.asItem())
                 || stack.is(AllBlocks.MILLSTONE.asItem())
                 || stack.is(AllBlocks.CRUSHING_WHEEL.asItem())
                 || stack.is(AllBlocks.ENCASED_FAN.asItem())
-                || stack.is(AllBlocks.MECHANICAL_CRAFTER.asItem())
-                || stack.is(AllBlocks.MECHANICAL_MIXER.asItem())
+                || stack.is(AllBlocks.MECHANICAL_CRAFTER.asItem());
+        boolean fluid = allowFluidProcessing && (stack.is(AllBlocks.MECHANICAL_MIXER.asItem())
                 || stack.is(AllBlocks.SPOUT.asItem())
-                || stack.is(AllBlocks.ITEM_DRAIN.asItem());
+                || stack.is(AllBlocks.ITEM_DRAIN.asItem()));
+        return common || fluid || CreateFamilyRecipeDiscovery.profile(level, stack)
+                .filter(profile -> profile.supports(allowFluidProcessing))
+                .isPresent();
     }
 
     private static boolean isSupportedCondition(ItemStack stack) {
@@ -189,6 +194,15 @@ public final class SimulationRecipeResolver {
             appendDisplayRecipes(result, collectCandidates(level, fan, condition,
                     allowFluidProcessing), fan, condition);
         }
+        for (CreateFamilyRecipeDiscovery.DynamicModuleProfile profile
+                : CreateFamilyRecipeDiscovery.profiles(level)) {
+            if (profile.supports(allowFluidProcessing)) {
+                appendDisplayRecipes(result,
+                        collectCandidates(level, profile.module(), ItemStack.EMPTY,
+                                allowFluidProcessing),
+                        profile.module(), ItemStack.EMPTY);
+            }
+        }
         return List.copyOf(result);
     }
 
@@ -204,13 +218,30 @@ public final class SimulationRecipeResolver {
             ResourceLocation displayId = ResourceLocation.fromNamespaceAndPath(candidate.id.getNamespace(),
                     candidate.id.getPath() + "/" + variant);
             List<DisplayInput> inputs = mergeDisplayInputs(candidate.requirements);
+            String processKey = "jei.mekanicalcreate.process." + candidate.process;
             target.add(new DisplayRecipe(displayId,
-                    Component.translatable("jei.mekanicalcreate.process." + candidate.process),
+                    Component.translatableWithFallback(processKey,
+                            humanize(candidate.process)),
                     module, condition, inputs, candidate.displayOutputs,
                     candidate.fluidRequirements.stream().map(FluidRequirement::ingredient).toList(),
                     candidate.displayFluidOutputs(),
                     candidate.sequenceSteps, candidate.loops));
         }
+    }
+
+    private static String humanize(String value) {
+        String[] words = value.replace('/', '_').split("_");
+        StringBuilder result = new StringBuilder();
+        for (String word : words) {
+            if (word.isBlank() || word.equals("dynamic")) {
+                continue;
+            }
+            if (!result.isEmpty()) {
+                result.append(' ');
+            }
+            result.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+        }
+        return result.toString();
     }
 
     private static List<DisplayInput> mergeDisplayInputs(List<Requirement> requirements) {
@@ -278,7 +309,6 @@ public final class SimulationRecipeResolver {
                             .map(ManualApplicationRecipe::asDeploying)
                             .toList(),
                     "deploying", 20, true);
-            addSequenced(candidates, recipes, ModuleKind.DEPLOYER, allowFluidProcessing);
         } else if (module.is(AllBlocks.MECHANICAL_PRESS.asItem())) {
             RecipeType<PressingRecipe> type = AllRecipeTypes.PRESSING.getType();
             addProcessing(candidates, recipes.getAllRecipesFor(type),
@@ -288,12 +318,10 @@ public final class SimulationRecipeResolver {
                 addProcessing(candidates, recipes.getAllRecipesFor(compacting),
                         "compacting", 35, false);
             }
-            addSequenced(candidates, recipes, ModuleKind.PRESS, allowFluidProcessing);
         } else if (module.is(AllBlocks.MECHANICAL_SAW.asItem())) {
             RecipeType<CuttingRecipe> type = AllRecipeTypes.CUTTING.getType();
             addProcessing(candidates, recipes.getAllRecipesFor(type),
                     "cutting", 20, false);
-            addSequenced(candidates, recipes, ModuleKind.SAW, allowFluidProcessing);
         } else if (module.is(AllBlocks.MILLSTONE.asItem())) {
             RecipeType<MillingRecipe> type = AllRecipeTypes.MILLING.getType();
             addProcessing(candidates, recipes.getAllRecipesFor(type),
@@ -318,13 +346,77 @@ public final class SimulationRecipeResolver {
             RecipeType<FillingRecipe> type = AllRecipeTypes.FILLING.getType();
             addProcessing(candidates, recipes.getAllRecipesFor(type),
                     "filling", 35, false);
-            addSequenced(candidates, recipes, ModuleKind.SPOUT, true);
         } else if (allowFluidProcessing && module.is(AllBlocks.ITEM_DRAIN.asItem())) {
             RecipeType<EmptyingRecipe> type = AllRecipeTypes.EMPTYING.getType();
             addProcessing(candidates, recipes.getAllRecipesFor(type),
                     "emptying", 35, false);
+        } else {
+            CreateFamilyRecipeDiscovery.profile(level, module)
+                    .ifPresent(profile -> addDynamicProcessing(candidates, recipes,
+                            profile, allowFluidProcessing));
         }
-        return candidates;
+        addSequenced(candidates, level, recipes, module, allowFluidProcessing);
+        return candidates.stream()
+                .map(candidate -> candidate.energyPerTick > 0
+                        ? candidate
+                        : candidate.withEnergyPerTick(
+                        StressEnergyConverter.energyPerTick(module,
+                                candidate.complexity)))
+                .toList();
+    }
+
+    private static void addDynamicProcessing(
+            List<Candidate> target, RecipeManager manager,
+            CreateFamilyRecipeDiscovery.DynamicModuleProfile profile,
+            boolean allowFluidProcessing) {
+        for (CreateFamilyRecipeDiscovery.RecipeTypeBinding binding : profile.bindings()) {
+            for (RecipeHolder<?> holder
+                    : CreateFamilyRecipeDiscovery.allRecipesFor(manager, binding.type())) {
+                if (!(holder.value() instanceof ProcessingRecipe<?, ?> recipe)
+                        || !AllRecipeTypes.CAN_BE_AUTOMATED.test(holder)) {
+                    continue;
+                }
+                boolean requiresFluids = !recipe.getFluidIngredients().isEmpty()
+                        || !recipe.getFluidResults().isEmpty();
+                if (requiresFluids && !allowFluidProcessing) {
+                    continue;
+                }
+                List<Requirement> requirements = new ArrayList<>();
+                for (int index = 0; index < recipe.getIngredients().size(); index++) {
+                    Ingredient ingredient = recipe.getIngredients().get(index);
+                    if (!ingredient.isEmpty()) {
+                        requirements.add(new Requirement(ingredient, 1, true, index));
+                    }
+                }
+                List<FluidRequirement> fluidRequirements = recipe.getFluidIngredients().stream()
+                        .map(FluidRequirement::new).toList();
+                if (requirements.isEmpty() && fluidRequirements.isEmpty()) {
+                    continue;
+                }
+                int duration = recipe.getProcessingDuration() > 0
+                        ? Math.max(20, recipe.getProcessingDuration()) : DEFAULT_DURATION;
+                long energyPerTick = 0;
+                if (!profile.kinetic()) {
+                    Optional<NativeRecipeEnergy.EnergyProfile> nativeEnergy =
+                            NativeRecipeEnergy.profile(recipe, duration);
+                    if (nativeEnergy.isEmpty()) {
+                        continue;
+                    }
+                    duration = nativeEnergy.get().duration();
+                    energyPerTick = nativeEnergy.get().energyPerTick();
+                }
+                String process = "dynamic_" + binding.id().getNamespace() + "_"
+                        + binding.id().getPath().replace('/', '_');
+                target.add(new Candidate(
+                        derivedId(holder.id(), process), process, requirements,
+                        fluidRequirements, displayOutputs(recipe.getRollableResults(), false),
+                        recipe.getFluidResults().stream().map(FluidStack::copy).toList(),
+                        0, 1, requirements.size(), 50, duration,
+                        (level, match) -> appendRemainders(
+                                recipe.rollResults(level.random), match),
+                        energyPerTick));
+            }
+        }
     }
 
     private static <R extends ProcessingRecipe<?, ?>> void addProcessing(
@@ -361,8 +453,9 @@ public final class SimulationRecipeResolver {
         }
     }
 
-    private static void addSequenced(List<Candidate> target, RecipeManager manager,
-                                     ModuleKind selectedModule, boolean allowFluidProcessing) {
+    private static void addSequenced(List<Candidate> target, Level level,
+                                     RecipeManager manager, ItemStack selectedModule,
+                                     boolean allowFluidProcessing) {
         RecipeType<SequencedAssemblyRecipe> type = AllRecipeTypes.SEQUENCED_ASSEMBLY.getType();
         for (RecipeHolder<SequencedAssemblyRecipe> holder
                 : manager.getAllRecipesFor(type)) {
@@ -374,31 +467,46 @@ public final class SimulationRecipeResolver {
             requirements.add(new Requirement(recipe.getIngredient(), 1, true, -1));
             boolean containsSelectedModule = false;
             boolean supported = true;
+            long sequenceEnergyPerLoop = 0;
             int loops = Math.max(1, recipe.getLoops());
             for (SequencedRecipe<?> step : recipe.getSequence()) {
                 ProcessingRecipe<?, ?> processing = step.getRecipe();
-                if (processing instanceof DeployerApplicationRecipe deployer) {
-                    containsSelectedModule |= selectedModule == ModuleKind.DEPLOYER;
-                    if (deployer.getIngredients().size() < 2) {
-                        supported = false;
-                        break;
-                    }
-                    requirements.add(new Requirement(deployer.getIngredients().get(1),
-                            deployer.shouldKeepHeldItem() ? 1 : loops,
-                            !deployer.shouldKeepHeldItem(), -1));
-                } else if (processing instanceof PressingRecipe) {
-                    containsSelectedModule |= selectedModule == ModuleKind.PRESS;
-                } else if (processing instanceof CuttingRecipe) {
-                    containsSelectedModule |= selectedModule == ModuleKind.SAW;
-                } else if (processing instanceof FillingRecipe filling) {
-                    if (!allowFluidProcessing) {
-                        supported = false;
-                        break;
-                    }
-                    containsSelectedModule |= selectedModule == ModuleKind.SPOUT;
-                } else {
+                ItemStack stepModule = sequenceModule(level, processing).orElse(ItemStack.EMPTY);
+                if (stepModule.isEmpty()) {
                     supported = false;
                     break;
+                }
+                containsSelectedModule |= ItemStack.isSameItemSameComponents(
+                        selectedModule, stepModule);
+                sequenceEnergyPerLoop = saturatedAdd(sequenceEnergyPerLoop,
+                        sequenceStepEnergy(level, processing, stepModule));
+
+                boolean deployerStep = processing.getType()
+                        == AllRecipeTypes.DEPLOYING.getType();
+                if (deployerStep && processing.getIngredients().size() < 2) {
+                    supported = false;
+                    break;
+                }
+                // The first ingredient is always the transitional assembly
+                // item. Any additional ingredients are supplied by the step's
+                // machine and must be flattened into the factory input pool.
+                for (int ingredientIndex = 1;
+                     ingredientIndex < processing.getIngredients().size();
+                     ingredientIndex++) {
+                    Ingredient ingredient = processing.getIngredients().get(ingredientIndex);
+                    if (ingredient.isEmpty()) {
+                        continue;
+                    }
+                    boolean keepHeld = deployerStep
+                            && processing instanceof DeployerApplicationRecipe deployer
+                            && deployer.shouldKeepHeldItem();
+                    requirements.add(new Requirement(ingredient,
+                            keepHeld ? 1 : loops, !keepHeld, -1));
+                }
+                if (!processing.getFluidIngredients().isEmpty()
+                        && !allowFluidProcessing) {
+                        supported = false;
+                        break;
                 }
             }
             if (!supported || !containsSelectedModule) {
@@ -406,8 +514,7 @@ public final class SimulationRecipeResolver {
             }
             List<FluidRequirement> fluidRequirements = new ArrayList<>();
             for (SequencedRecipe<?> step : recipe.getSequence()) {
-                if (step.getRecipe() instanceof FillingRecipe filling) {
-                    SizedFluidIngredient fluid = filling.getRequiredFluid();
+                for (SizedFluidIngredient fluid : step.getRecipe().getFluidIngredients()) {
                     fluidRequirements.add(new FluidRequirement(new SizedFluidIngredient(
                             fluid.ingredient(), Math.multiplyExact(fluid.amount(), loops))));
                 }
@@ -416,9 +523,67 @@ public final class SimulationRecipeResolver {
                     requirements, fluidRequirements, displayOutputs(recipe.resultPool, true), List.of(),
                     recipe.getSequence().size(), loops,
                     recipe.getSequence().size() * loops, 100, DEFAULT_DURATION,
-                    (level, match) -> appendRemainders(
-                            List.of(rollWeighted(recipe.resultPool, level.random)), match)));
+                    (recipeLevel, match) -> appendRemainders(
+                            List.of(rollWeighted(recipe.resultPool, recipeLevel.random)), match),
+                    saturatedMultiply(sequenceEnergyPerLoop, loops)));
         }
+    }
+
+    private static long sequenceStepEnergy(Level level,
+                                           ProcessingRecipe<?, ?> recipe,
+                                           ItemStack module) {
+        Optional<CreateFamilyRecipeDiscovery.DynamicModuleProfile> profile =
+                CreateFamilyRecipeDiscovery.profile(level, module);
+        if (profile.isPresent() && !profile.get().kinetic()) {
+            Optional<NativeRecipeEnergy.EnergyProfile> nativeEnergy =
+                    NativeRecipeEnergy.profile(recipe, DEFAULT_DURATION);
+            if (nativeEnergy.isPresent()) {
+                long totalEnergy = saturatedMultiply(
+                        nativeEnergy.get().energyPerTick(),
+                        nativeEnergy.get().duration());
+                return Math.max(1, saturatedAdd(totalEnergy,
+                        DEFAULT_DURATION - 1) / DEFAULT_DURATION);
+            }
+        }
+        return StressEnergyConverter.energyPerTick(module, 1);
+    }
+
+    private static long saturatedAdd(long left, long right) {
+        try {
+            return Math.addExact(left, right);
+        } catch (ArithmeticException ignored) {
+            return Long.MAX_VALUE;
+        }
+    }
+
+    private static long saturatedMultiply(long left, long right) {
+        try {
+            return Math.multiplyExact(left, right);
+        } catch (ArithmeticException ignored) {
+            return Long.MAX_VALUE;
+        }
+    }
+
+    private static Optional<ItemStack> sequenceModule(Level level,
+                                                       ProcessingRecipe<?, ?> recipe) {
+        RecipeType<?> type = recipe.getType();
+        if (type == AllRecipeTypes.DEPLOYING.getType()) {
+            return Optional.of(AllBlocks.DEPLOYER.asStack());
+        }
+        if (type == AllRecipeTypes.PRESSING.getType()) {
+            return Optional.of(AllBlocks.MECHANICAL_PRESS.asStack());
+        }
+        if (type == AllRecipeTypes.CUTTING.getType()) {
+            return Optional.of(AllBlocks.MECHANICAL_SAW.asStack());
+        }
+        if (type == AllRecipeTypes.FILLING.getType()) {
+            return Optional.of(AllBlocks.SPOUT.asStack());
+        }
+        return CreateFamilyRecipeDiscovery.profiles(level).stream()
+                .filter(profile -> profile.bindings().stream()
+                        .anyMatch(binding -> binding.type() == type))
+                .map(CreateFamilyRecipeDiscovery.DynamicModuleProfile::module)
+                .findFirst();
     }
 
     private static void addFan(List<Candidate> target, RecipeManager manager, ItemStack condition) {
@@ -800,17 +965,20 @@ public final class SimulationRecipeResolver {
     static final class ExecutionPlan {
         private final ResourceLocation id;
         private final int duration;
+        private final long energyPerTick;
         private final List<StackUse> stackUses;
         private final List<CatalystUse> catalystUses;
         private final List<FluidUse> fluidUses;
         private final List<ItemStack> itemResults;
         private final List<FluidStack> fluidResults;
 
-        private ExecutionPlan(ResourceLocation id, int duration, List<StackUse> stackUses,
+        private ExecutionPlan(ResourceLocation id, int duration, long energyPerTick,
+                              List<StackUse> stackUses,
                               List<CatalystUse> catalystUses, List<FluidUse> fluidUses,
                               List<ItemStack> itemResults, List<FluidStack> fluidResults) {
             this.id = id;
             this.duration = duration;
+            this.energyPerTick = energyPerTick;
             this.stackUses = List.copyOf(stackUses);
             this.catalystUses = List.copyOf(catalystUses);
             this.fluidUses = List.copyOf(fluidUses);
@@ -826,6 +994,10 @@ public final class SimulationRecipeResolver {
 
         int duration() {
             return duration;
+        }
+
+        long energyPerTick() {
+            return energyPerTick;
         }
 
         List<ItemStack> itemResults() {
@@ -872,13 +1044,6 @@ public final class SimulationRecipeResolver {
         }
     }
 
-    private enum ModuleKind {
-        DEPLOYER,
-        PRESS,
-        SAW,
-        SPOUT
-    }
-
     private record Requirement(Ingredient ingredient, int count, boolean consumed, int craftPosition) {
     }
 
@@ -889,12 +1054,28 @@ public final class SimulationRecipeResolver {
                              List<FluidRequirement> fluidRequirements,
                              List<DisplayOutput> displayOutputs, List<FluidStack> fluidOutputs,
                              int sequenceSteps, int loops,
-                             int complexity, int priority, int duration, ResultFactory resultFactory) {
+                             int complexity, int priority, int duration,
+                             ResultFactory resultFactory, long energyPerTick) {
+        private Candidate(ResourceLocation id, String process, List<Requirement> requirements,
+                          List<FluidRequirement> fluidRequirements,
+                          List<DisplayOutput> displayOutputs, List<FluidStack> fluidOutputs,
+                          int sequenceSteps, int loops, int complexity, int priority,
+                          int duration, ResultFactory resultFactory) {
+            this(id, process, requirements, fluidRequirements, displayOutputs, fluidOutputs,
+                    sequenceSteps, loops, complexity, priority, duration, resultFactory, 0L);
+        }
+
         private Candidate(ResourceLocation id, String process, List<Requirement> requirements,
                           List<DisplayOutput> displayOutputs, int sequenceSteps, int loops,
                           int complexity, int priority, int duration, ResultFactory resultFactory) {
             this(id, process, requirements, List.of(), displayOutputs, List.of(),
-                    sequenceSteps, loops, complexity, priority, duration, resultFactory);
+                    sequenceSteps, loops, complexity, priority, duration, resultFactory, 0L);
+        }
+
+        private Candidate withEnergyPerTick(long energyPerTick) {
+            return new Candidate(id, process, requirements, fluidRequirements,
+                    displayOutputs, fluidOutputs, sequenceSteps, loops, complexity,
+                    priority, duration, resultFactory, energyPerTick);
         }
 
         int consumedPerRun() {

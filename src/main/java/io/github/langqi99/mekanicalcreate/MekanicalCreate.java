@@ -1,5 +1,7 @@
 package io.github.langqi99.mekanicalcreate;
 
+import com.mojang.logging.LogUtils;
+import io.github.langqi99.mekanicalcreate.content.CreateFamilyRecipeDiscovery;
 import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryMultiblockData;
 import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryMultiblockCache;
 import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryValidator;
@@ -10,10 +12,14 @@ import io.github.langqi99.mekanicalcreate.registry.ModMenus;
 import mekanism.common.lib.multiblock.MultiblockManager;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.OnDatapackSyncEvent;
+import org.slf4j.Logger;
 
 @Mod(MekanicalCreate.MOD_ID)
 public final class MekanicalCreate {
     public static final String MOD_ID = "mekanicalcreate";
+    public static final Logger LOGGER = LogUtils.getLogger();
     public static final MultiblockManager<MekanicalFactoryMultiblockData> MEKANICAL_FACTORY_MANAGER =
             new MultiblockManager<>("mekanicalFactory", MekanicalFactoryMultiblockCache::new,
                     MekanicalFactoryValidator::new);
@@ -23,5 +29,12 @@ public final class MekanicalCreate {
         ModBlockEntities.register(modBus);
         ModMenus.register(modBus);
         ModItems.register(modBus);
+        NeoForge.EVENT_BUS.addListener(this::onDatapackSync);
+    }
+
+    private void onDatapackSync(OnDatapackSyncEvent event) {
+        // RecipeManager is reused across /reload, so discard all discovered
+        // addon bindings whenever datapack contents are synchronized.
+        CreateFamilyRecipeDiscovery.clearCache();
     }
 }

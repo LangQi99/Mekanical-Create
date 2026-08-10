@@ -61,10 +61,23 @@ public final class MekanicalCreateJeiPlugin implements IModPlugin {
     public void registerRecipes(IRecipeRegistration registration) {
         ClientLevel level = Minecraft.getInstance().level;
         if (level != null) {
+            List<SimulationRecipeResolver.DisplayRecipe> itemRecipes =
+                    SimulationRecipeResolver.getDisplayRecipes(level, false);
+            List<SimulationRecipeResolver.DisplayRecipe> fluidRecipes =
+                    SimulationRecipeResolver.getDisplayRecipes(level, true);
             registration.addRecipes(SimulationChamberRecipeCategory.TYPE,
-                    SimulationRecipeResolver.getDisplayRecipes(level, false));
+                    itemRecipes);
             registration.addRecipes(SimulationChamberRecipeCategory.FLUID_TYPE,
-                    SimulationRecipeResolver.getDisplayRecipes(level, true));
+                    fluidRecipes);
+            long externalSequences = java.util.stream.Stream
+                    .concat(itemRecipes.stream(), fluidRecipes.stream())
+                    .filter(recipe -> recipe.sequenceSteps() > 0)
+                    .filter(recipe -> !recipe.id().getNamespace().equals("create"))
+                    .count();
+            MekanicalCreate.LOGGER.info(
+                    "Registered {} item and {} fluid factory JEI recipes, including {} "
+                            + "external sequenced-assembly variants",
+                    itemRecipes.size(), fluidRecipes.size(), externalSequences);
         }
         for (ItemStack factory : factoryStacks()) {
             registration.addItemStackInfo(factory,

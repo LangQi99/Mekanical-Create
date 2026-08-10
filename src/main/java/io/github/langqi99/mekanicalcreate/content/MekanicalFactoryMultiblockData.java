@@ -66,6 +66,8 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
     private long clientEnergy;
     @ContainerSync(getter = "getEnergyCapacity")
     private long clientEnergyCapacity = BASE_ENERGY_CAPACITY;
+    @ContainerSync(getter = "getEnergyPerTick")
+    private long clientEnergyPerTick = BASE_ENERGY_PER_TICK;
     @ContainerSync
     private final BasicFluidTank inputFluidTank0;
     @ContainerSync
@@ -371,7 +373,14 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
     }
 
     public long getEnergyPerTick() {
-        return BASE_ENERGY_PER_TICK * (4L + getSpeedCoreCount()) / 4L;
+        if (isRemote()) {
+            return clientEnergyPerTick;
+        }
+        long base = activePlan == null
+                ? BASE_ENERGY_PER_TICK
+                : activePlan.energyPerTick();
+        return Math.max(1L, (long) Math.ceil(
+                base * (4D + getSpeedCoreCount()) / 4D));
     }
 
     public List<InputInventorySlot> getInputSlots() {

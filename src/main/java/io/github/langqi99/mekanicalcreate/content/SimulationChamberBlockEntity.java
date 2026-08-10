@@ -33,6 +33,7 @@ import mekanism.common.inventory.slot.InputInventorySlot;
 import mekanism.common.inventory.slot.OutputInventorySlot;
 import mekanism.common.lib.transmitter.TransmissionType;
 import mekanism.common.registries.MekanismSounds;
+import mekanism.common.inventory.container.sync.SyncableLong;
 import mekanism.common.tile.component.TileComponentEjector;
 import mekanism.common.tile.component.ITileComponent;
 import mekanism.common.tile.component.config.ConfigInfo;
@@ -299,6 +300,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             }
             progress = 0;
             duration = MekanismUtils.getTicks(this, getTierDuration(activePlan.duration()));
+            energyContainer.setEnergyPerTick(getTierEnergyUsage(activePlan.energyPerTick()));
             planDirty = false;
         }
 
@@ -330,6 +332,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             activePlan = null;
             progress = 0;
             duration = DEFAULT_DURATION;
+            resetEnergyUsage();
             planDirty = true;
         }
         markForSave();
@@ -407,6 +410,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         if (progress != 0 || duration != DEFAULT_DURATION || getActive()) {
             progress = 0;
             duration = DEFAULT_DURATION;
+            resetEnergyUsage();
             setActive(false);
             markForSave();
         } else {
@@ -419,6 +423,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         planDirty = true;
         progress = 0;
         duration = DEFAULT_DURATION;
+        resetEnergyUsage();
         if (getLevel() != null) {
             markForSave();
         }
@@ -433,6 +438,16 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             case ULTIMATE, CREATIVE -> 0.25;
         };
         return Math.max(1, (int) Math.ceil(Math.max(1, baseDuration) * multiplier));
+    }
+
+    private long getTierEnergyUsage(long baseEnergyPerTick) {
+        return Math.max(1, Math.multiplyExact(baseEnergyPerTick,
+                getTierMultiplier(Attribute.getBaseTier(getBlockHolder()))));
+    }
+
+    private void resetEnergyUsage() {
+        energyContainer.setEnergyPerTick(getBaseEnergyUsage(
+                Attribute.getBaseTier(getBlockHolder())));
     }
 
     public boolean isFanModuleInstalled() {
@@ -494,6 +509,8 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         super.addContainerTrackers(container);
         container.track(SyncableInt.create(() -> progress, value -> progress = value));
         container.track(SyncableInt.create(() -> duration, value -> duration = value));
+        container.track(SyncableLong.create(energyContainer::getEnergyPerTick,
+                energyContainer::setEnergyPerTick));
     }
 
     @Override
@@ -512,6 +529,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         duration = DEFAULT_DURATION;
         activePlan = null;
         planDirty = true;
+        resetEnergyUsage();
     }
 
     @NotNull
@@ -593,6 +611,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         duration = DEFAULT_DURATION;
         activePlan = null;
         planDirty = true;
+        resetEnergyUsage();
     }
 
     private boolean isSupportedModule(ItemStack stack) {
@@ -603,9 +622,12 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                 || stack.is(AllBlocks.CRUSHING_WHEEL.asItem())
                 || stack.is(AllBlocks.ENCASED_FAN.asItem())
                 || stack.is(AllBlocks.MECHANICAL_CRAFTER.asItem());
-        return common || supportsFluids() && (stack.is(AllBlocks.MECHANICAL_MIXER.asItem())
+        boolean builtIn = common || supportsFluids() && (stack.is(AllBlocks.MECHANICAL_MIXER.asItem())
                 || stack.is(AllBlocks.SPOUT.asItem())
                 || stack.is(AllBlocks.ITEM_DRAIN.asItem()));
+        Level level = getLevel();
+        return builtIn || level != null
+                && SimulationRecipeResolver.isSupportedModule(level, stack, supportsFluids());
     }
 
     private static boolean isSupportedCondition(ItemStack stack) {
