@@ -30,6 +30,7 @@ import mekanism.common.inventory.slot.InputInventorySlot;
 import mekanism.common.inventory.slot.OutputInventorySlot;
 import mekanism.common.lib.transmitter.TransmissionType;
 import mekanism.common.registries.MekanismSounds;
+import mekanism.common.inventory.container.sync.SyncableFloatingLong;
 import mekanism.common.tile.component.TileComponentEjector;
 import mekanism.common.tile.component.ITileComponent;
 import mekanism.common.tile.component.TileComponentConfig;
@@ -158,7 +159,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         moduleSlot = builder.addSlot(new BasicInventorySlot(1,
                 BasicInventorySlot.alwaysTrueBi,
                 BasicInventorySlot.alwaysTrueBi,
-                SimulationChamberBlockEntity::isSupportedModule,
+                this::isSupportedModule,
                 configurationListener, 25, 24) {
         });
         conditionSlot = builder.addSlot(new BasicInventorySlot(1,
@@ -222,6 +223,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             }
             progress = 0;
             duration = MekanismUtils.getTicks(this, getTierDuration(activePlan.duration()));
+            energyContainer.setEnergyPerTick(getTierEnergyUsage(activePlan.energyPerTick()));
             planDirty = false;
         }
 
@@ -250,6 +252,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             activePlan = null;
             progress = 0;
             duration = DEFAULT_DURATION;
+            resetEnergyUsage();
             planDirty = true;
         }
         markForSave();
@@ -284,6 +287,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         if (progress != 0 || duration != DEFAULT_DURATION || getActive()) {
             progress = 0;
             duration = DEFAULT_DURATION;
+            resetEnergyUsage();
             setActive(false);
             markForSave();
         } else {
@@ -296,6 +300,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         planDirty = true;
         progress = 0;
         duration = DEFAULT_DURATION;
+        resetEnergyUsage();
         if (getLevel() != null) {
             markForSave();
         }
@@ -310,6 +315,16 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             case ULTIMATE, CREATIVE -> 0.25;
         };
         return Math.max(1, (int) Math.ceil(Math.max(1, baseDuration) * multiplier));
+    }
+
+    private FloatingLong getTierEnergyUsage(long baseEnergyPerTick) {
+        return FloatingLong.create(Math.max(1, Math.multiplyExact(baseEnergyPerTick,
+                getTierMultiplier(Attribute.getBaseTier(getBlockType())))));
+    }
+
+    private void resetEnergyUsage() {
+        energyContainer.setEnergyPerTick(getBaseEnergyUsage(
+                Attribute.getBaseTier(getBlockType())));
     }
 
     public boolean isFanModuleInstalled() {
@@ -345,6 +360,8 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         super.addContainerTrackers(container);
         container.track(SyncableInt.create(() -> progress, value -> progress = value));
         container.track(SyncableInt.create(() -> duration, value -> duration = value));
+        container.track(SyncableFloatingLong.create(energyContainer::getEnergyPerTick,
+                energyContainer::setEnergyPerTick));
     }
 
     @Override
@@ -363,6 +380,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         duration = DEFAULT_DURATION;
         activePlan = null;
         planDirty = true;
+        resetEnergyUsage();
     }
 
     @NotNull
@@ -404,6 +422,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         duration = DEFAULT_DURATION;
         activePlan = null;
         planDirty = true;
+        resetEnergyUsage();
         Level level = getLevel();
         if (level != null && !level.isClientSide()) {
             level.playSound(null, getBlockPos(), MekanismSounds.HYDRAULIC.get(),
@@ -411,14 +430,17 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         }
     }
 
-    private static boolean isSupportedModule(ItemStack stack) {
-        return stack.is(AllBlocks.DEPLOYER.asItem())
+    private boolean isSupportedModule(ItemStack stack) {
+        boolean common = stack.is(AllBlocks.DEPLOYER.asItem())
                 || stack.is(AllBlocks.MECHANICAL_SAW.asItem())
                 || stack.is(AllBlocks.MECHANICAL_PRESS.asItem())
                 || stack.is(AllBlocks.MILLSTONE.asItem())
                 || stack.is(AllBlocks.CRUSHING_WHEEL.asItem())
                 || stack.is(AllBlocks.ENCASED_FAN.asItem())
                 || stack.is(AllBlocks.MECHANICAL_CRAFTER.asItem());
+        Level level = getLevel();
+        return common || level != null
+                && SimulationRecipeResolver.isSupportedModule(level, stack, false);
     }
 
     private static boolean isSupportedCondition(ItemStack stack) {
