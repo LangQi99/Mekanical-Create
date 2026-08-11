@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.function.Consumer;
 import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
@@ -42,6 +43,7 @@ import net.minecraftforge.forgespi.language.IModInfo;
  * blocks from the same mod by their registry names.
  */
 public final class CreateFamilyRecipeDiscovery {
+    private static final int MAX_GENERIC_SIGNATURE_DEPTH = 64;
     private static final Map<RecipeManager, DiscoveryResult> CACHE = new WeakHashMap<>();
 
     private CreateFamilyRecipeDiscovery() {
@@ -269,36 +271,65 @@ public final class CreateFamilyRecipeDiscovery {
                 });
             }
             return Set.copyOf(result);
-        } catch (LinkageError | RuntimeException exception) {
-            MekanicalCreate.LOGGER.debug(
-                    "Could not inspect block entity recipe references for {}",
+        } catch (LinkageError | RuntimeException | StackOverflowError exception) {
+            MekanicalCreate.LOGGER.warn(
+                    "Skipped unsafe block entity recipe signature inspection for {}",
                     BuiltInRegistries.BLOCK.getKey(block), exception);
             return Set.of();
         }
     }
 
     private static void collectProcessingRecipeTypes(Type type, Set<Class<?>> result) {
-        if (type instanceof Class<?> clazz) {
+        visitGenericSignature(type, clazz -> {
             if (Recipe.class.isAssignableFrom(clazz)
                     && clazz != Recipe.class
                     && clazz != ProcessingRecipe.class) {
                 result.add(clazz);
             }
-        } else if (type instanceof ParameterizedType parameterized) {
-            collectProcessingRecipeTypes(parameterized.getRawType(), result);
-            for (Type argument : parameterized.getActualTypeArguments()) {
-                collectProcessingRecipeTypes(argument, result);
+        });
+    }
+
+    static void visitGenericSignature(Type type, Consumer<Class<?>> visitor) {
+        visitGenericSignature(type, visitor, new HashSet<>(), 0);
+    }
+
+    private static void visitGenericSignature(
+            Type type, Consumer<Class<?>> visitor, Set<Type> visiting, int depth) {
+        // Generic signatures may be recursive, for example
+        // T extends Comparable<T>. Following TypeVariable bounds without cycle
+        // detection overflows the stack while JEI triggers recipe discovery.
+        // The depth limit is a second line of defence for unusual Type
+        // implementations that recreate equivalent objects on every access.
+        if (type == null || depth >= MAX_GENERIC_SIGNATURE_DEPTH
+                || !visiting.add(type)) {
+            return;
+        }
+        try {
+            if (type instanceof Class<?> clazz) {
+                visitor.accept(clazz);
+            } else if (type instanceof ParameterizedType parameterized) {
+                visitGenericSignature(parameterized.getRawType(), visitor,
+                        visiting, depth + 1);
+                for (Type argument : parameterized.getActualTypeArguments()) {
+                    visitGenericSignature(argument, visitor, visiting, depth + 1);
+                }
+            } else if (type instanceof GenericArrayType array) {
+                visitGenericSignature(array.getGenericComponentType(), visitor,
+                        visiting, depth + 1);
+            } else if (type instanceof WildcardType wildcard) {
+                Arrays.stream(wildcard.getUpperBounds())
+                        .forEach(bound -> visitGenericSignature(bound, visitor,
+                                visiting, depth + 1));
+                Arrays.stream(wildcard.getLowerBounds())
+                        .forEach(bound -> visitGenericSignature(bound, visitor,
+                                visiting, depth + 1));
+            } else if (type instanceof TypeVariable<?> variable) {
+                Arrays.stream(variable.getBounds())
+                        .forEach(bound -> visitGenericSignature(bound, visitor,
+                                visiting, depth + 1));
             }
-        } else if (type instanceof GenericArrayType array) {
-            collectProcessingRecipeTypes(array.getGenericComponentType(), result);
-        } else if (type instanceof WildcardType wildcard) {
-            Arrays.stream(wildcard.getUpperBounds())
-                    .forEach(bound -> collectProcessingRecipeTypes(bound, result));
-            Arrays.stream(wildcard.getLowerBounds())
-                    .forEach(bound -> collectProcessingRecipeTypes(bound, result));
-        } else if (type instanceof TypeVariable<?> variable) {
-            Arrays.stream(variable.getBounds())
-                    .forEach(bound -> collectProcessingRecipeTypes(bound, result));
+        } finally {
+            visiting.remove(type);
         }
     }
 
