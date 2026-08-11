@@ -1,10 +1,14 @@
 package io.github.langqi99.mekanicalcreate.content;
 
-import com.simibubi.create.content.processing.recipe.ProcessingRecipe;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Optional;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
 
 /** Reads optional, addon-defined FE costs without linking against the addon. */
 final class NativeRecipeEnergy {
@@ -13,12 +17,14 @@ final class NativeRecipeEnergy {
     private static final List<String> RATE_GETTERS = List.of(
             "getMaxChargeRate", "getEnergyPerTick", "getPower",
             "getMaxEnergyUsage");
+    private static final List<String> MODULE_CHARGE_RATE_GETTERS = List.of(
+            "getConsumption", "getChargeRate", "getEnergyPerTick",
+            "getMaxEnergyUsage", "getMaxIn");
 
     private NativeRecipeEnergy() {
     }
 
-    static Optional<EnergyProfile> profile(ProcessingRecipe<?> recipe,
-                                           int fallbackDuration) {
+    static Optional<EnergyProfile> profile(Object recipe, int fallbackDuration) {
         long totalEnergy = readPositiveLong(recipe, TOTAL_ENERGY_GETTERS);
         long maximumRate = readPositiveLong(recipe, RATE_GETTERS);
         if (totalEnergy <= 0 && maximumRate <= 0) {
@@ -39,6 +45,24 @@ final class NativeRecipeEnergy {
             energyPerTick = maximumRate;
         }
         return Optional.of(new EnergyProfile(duration, Math.max(1, energyPerTick)));
+    }
+
+    static long itemChargingRate(ItemStack module) {
+        if (!(module.getItem() instanceof BlockItem blockItem)
+                || !(blockItem.getBlock() instanceof EntityBlock entityBlock)) {
+            return 1;
+        }
+        try {
+            BlockEntity blockEntity = entityBlock.newBlockEntity(
+                    BlockPos.ZERO, blockItem.getBlock().defaultBlockState());
+            if (blockEntity != null) {
+                return Math.max(1, readPositiveLong(blockEntity,
+                        MODULE_CHARGE_RATE_GETTERS));
+            }
+        } catch (LinkageError | RuntimeException ignored) {
+            // Optional addon internals may not be safe to instantiate outside a level.
+        }
+        return 1;
     }
 
     private static long readPositiveLong(Object target, List<String> getterNames) {

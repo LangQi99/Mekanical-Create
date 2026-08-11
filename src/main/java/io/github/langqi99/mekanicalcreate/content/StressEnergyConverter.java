@@ -2,9 +2,14 @@ package io.github.langqi99.mekanicalcreate.content;
 
 import com.simibubi.create.AllBlocks;
 import com.simibubi.create.api.stress.BlockStressValues;
+import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
+import io.github.langqi99.mekanicalcreate.MekanicalCreate;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
 
 /** Converts Create's configured stress impact into factory FE/t. */
 final class StressEnergyConverter {
@@ -36,6 +41,30 @@ final class StressEnergyConverter {
             return 0;
         }
         Block block = blockItem.getBlock();
-        return BlockStressValues.getImpact(block);
+        double configuredImpact = BlockStressValues.getImpact(block);
+        if (Double.isFinite(configuredImpact) && configuredImpact > 0) {
+            return configuredImpact;
+        }
+        // Create addons may override calculateStressApplied() without adding
+        // their machine to BlockStressValues. Instantiate a detached block
+        // entity so those machines still contribute their real configured
+        // stress impact instead of falling back to the minimum FE cost.
+        if (block instanceof EntityBlock entityBlock) {
+            try {
+                BlockEntity blockEntity = entityBlock.newBlockEntity(
+                        BlockPos.ZERO, block.defaultBlockState());
+                if (blockEntity instanceof KineticBlockEntity kineticBlockEntity) {
+                    double calculatedImpact = kineticBlockEntity.calculateStressApplied();
+                    if (Double.isFinite(calculatedImpact) && calculatedImpact > 0) {
+                        return calculatedImpact;
+                    }
+                }
+            } catch (LinkageError | RuntimeException exception) {
+                MekanicalCreate.LOGGER.debug(
+                        "Could not calculate addon stress impact for {}",
+                        blockItem.getBlock().getDescriptionId(), exception);
+            }
+        }
+        return 0;
     }
 }
