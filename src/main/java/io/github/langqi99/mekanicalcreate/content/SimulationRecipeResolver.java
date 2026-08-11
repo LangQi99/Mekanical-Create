@@ -42,12 +42,15 @@ import net.minecraft.world.item.crafting.AbstractCookingRecipe;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.ShapedRecipe;
 import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.energy.IEnergyStorage;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.crafting.SizedFluidIngredient;
 
@@ -58,6 +61,7 @@ import net.neoforged.neoforge.fluids.crafting.SizedFluidIngredient;
  */
 public final class SimulationRecipeResolver {
     private static final int DEFAULT_DURATION = 100;
+    private static final int MAX_NATIVE_CHARGING_DURATION = 1_000_000;
 
     private SimulationRecipeResolver() {
     }
@@ -69,8 +73,11 @@ public final class SimulationRecipeResolver {
         if (module.isEmpty() || !isSupportedModule(level, module, allowFluidProcessing)) {
             return Optional.empty();
         }
-        return resolve(level, inputSlots, inputFluidTanks,
+        List<Candidate> candidates = new ArrayList<>(
                 collectCandidates(level, module, condition, allowFluidProcessing));
+        addNativeItemChargingCandidates(candidates, level, module,
+                inputSlots.stream().map(IInventorySlot::getStack).toList());
+        return resolve(level, inputSlots, inputFluidTanks, candidates);
     }
 
     /**
@@ -104,6 +111,8 @@ public final class SimulationRecipeResolver {
                 candidates.addAll(collectCandidates(level, module, ItemStack.EMPTY,
                         allowFluidProcessing));
             }
+            addNativeItemChargingCandidates(candidates, level, module,
+                    inputSlots.stream().map(IInventorySlot::getStack).toList());
         }
         return resolve(level, inputSlots, inputFluidTanks, candidates);
     }
@@ -197,13 +206,97 @@ public final class SimulationRecipeResolver {
         for (CreateFamilyRecipeDiscovery.DynamicModuleProfile profile
                 : CreateFamilyRecipeDiscovery.profiles(level)) {
             if (profile.supports(allowFluidProcessing)) {
+                List<Candidate> candidates = new ArrayList<>(collectCandidates(
+                        level, profile.module(), ItemStack.EMPTY,
+                        allowFluidProcessing));
+                if (profile.chargesItems()) {
+                    addNativeItemChargingCandidates(candidates, level,
+                            profile.module(), BuiltInRegistries.ITEM.stream()
+                                    .map(item -> item.getDefaultInstance())
+                                    .filter(stack -> !stack.isEmpty())
+                                    .toList());
+                }
                 appendDisplayRecipes(result,
-                        collectCandidates(level, profile.module(), ItemStack.EMPTY,
-                                allowFluidProcessing),
+                        candidates,
                         profile.module(), ItemStack.EMPTY);
             }
         }
         return List.copyOf(result);
+    }
+
+    private static void addNativeItemChargingCandidates(
+            List<Candidate> target, Level level, ItemStack module,
+            List<ItemStack> availableStacks) {
+        Optional<CreateFamilyRecipeDiscovery.DynamicModuleProfile> profile =
+                CreateFamilyRecipeDiscovery.profile(level, module);
+        if (profile.isEmpty() || !profile.get().chargesItems()) {
+            return;
+        }
+        long moduleRate = NativeRecipeEnergy.itemChargingRate(module);
+        for (ItemStack input : distinctStacks(availableStacks.stream()
+                .filter(stack -> !stack.isEmpty()).toList())) {
+            EnergyChargePlan charge = energyChargePlan(input, moduleRate);
+            if (charge == null) {
+                continue;
+            }
+            ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(input.getItem());
+            String suffix = "native_item_charging_"
+                    + profile.get().moduleId().getNamespace() + "_"
+                    + profile.get().moduleId().getPath().replace('/', '_');
+            Requirement requirement = new Requirement(Ingredient.of(input.getItem()),
+                    1, true, 0, input.copyWithCount(1));
+            target.add(new Candidate(derivedId(itemId, suffix),
+                    "native_item_charging", List.of(requirement), List.of(),
+                    List.of(new DisplayOutput(charge.output(), 1)), List.of(),
+                    0, 1, 1, 60, charge.duration(),
+                    (recipeLevel, match) -> {
+                        EnergyChargePlan actual = energyChargePlan(
+                                match.firstAssignedStack(), moduleRate);
+                        return actual == null ? List.of()
+                                : List.of(actual.output());
+                    }, charge.energyPerTick()));
+        }
+    }
+
+    @Nullable
+    private static EnergyChargePlan energyChargePlan(ItemStack source,
+                                                     long requestedRate) {
+        ItemStack output = source.copyWithCount(1);
+        IEnergyStorage storage = output.getCapability(Capabilities.EnergyStorage.ITEM);
+        if (storage == null || !storage.canReceive()) {
+            return null;
+        }
+        int stored = storage.getEnergyStored();
+        int maximum = storage.getMaxEnergyStored();
+        if (maximum <= stored) {
+            return null;
+        }
+        int request = (int) Math.min(Integer.MAX_VALUE, Math.max(1, requestedRate));
+        int acceptedPerTick = storage.receiveEnergy(request, true);
+        if (acceptedPerTick <= 0) {
+            return null;
+        }
+        long missing = (long) maximum - stored;
+        long requiredTicks = 1L + (missing - 1L) / acceptedPerTick;
+        if (requiredTicks > MAX_NATIVE_CHARGING_DURATION) {
+            return null;
+        }
+        int duration = (int) requiredTicks;
+        long received = 0;
+        for (int tick = 0; tick < duration; tick++) {
+            int accepted = storage.receiveEnergy(request, false);
+            if (accepted <= 0) {
+                break;
+            }
+            received += accepted;
+        }
+        if (received <= 0) {
+            return null;
+        }
+        int actualDuration = (int) Math.min(Integer.MAX_VALUE,
+                1L + (received - 1L) / acceptedPerTick);
+        long energyPerTick = 1L + (received - 1L) / actualDuration;
+        return new EnergyChargePlan(output, actualDuration, energyPerTick);
     }
 
     private static void appendDisplayRecipes(List<DisplayRecipe> target, List<Candidate> candidates,
@@ -352,8 +445,8 @@ public final class SimulationRecipeResolver {
                     "emptying", 35, false);
         } else {
             CreateFamilyRecipeDiscovery.profile(level, module)
-                    .ifPresent(profile -> addDynamicProcessing(candidates, recipes,
-                            profile, allowFluidProcessing));
+                    .ifPresent(profile -> addDynamicProcessing(candidates, level,
+                            recipes, profile, allowFluidProcessing));
         }
         addSequenced(candidates, level, recipes, module, allowFluidProcessing);
         return candidates.stream()
@@ -366,18 +459,21 @@ public final class SimulationRecipeResolver {
     }
 
     private static void addDynamicProcessing(
-            List<Candidate> target, RecipeManager manager,
+            List<Candidate> target, Level level, RecipeManager manager,
             CreateFamilyRecipeDiscovery.DynamicModuleProfile profile,
             boolean allowFluidProcessing) {
         for (CreateFamilyRecipeDiscovery.RecipeTypeBinding binding : profile.bindings()) {
             for (RecipeHolder<?> holder
                     : CreateFamilyRecipeDiscovery.allRecipesFor(manager, binding.type())) {
-                if (!(holder.value() instanceof ProcessingRecipe<?, ?> recipe)
-                        || !AllRecipeTypes.CAN_BE_AUTOMATED.test(holder)) {
+                if (!AllRecipeTypes.CAN_BE_AUTOMATED.test(holder)) {
                     continue;
                 }
-                boolean requiresFluids = !recipe.getFluidIngredients().isEmpty()
-                        || !recipe.getFluidResults().isEmpty();
+                Recipe<?> recipe = holder.value();
+                ProcessingRecipe<?, ?> processing = recipe instanceof ProcessingRecipe<?, ?> value
+                        ? value : null;
+                boolean requiresFluids = processing != null
+                        && (!processing.getFluidIngredients().isEmpty()
+                        || !processing.getFluidResults().isEmpty());
                 if (requiresFluids && !allowFluidProcessing) {
                     continue;
                 }
@@ -388,13 +484,20 @@ public final class SimulationRecipeResolver {
                         requirements.add(new Requirement(ingredient, 1, true, index));
                     }
                 }
-                List<FluidRequirement> fluidRequirements = recipe.getFluidIngredients().stream()
+                List<FluidRequirement> fluidRequirements = processing == null ? List.of()
+                        : processing.getFluidIngredients().stream()
                         .map(FluidRequirement::new).toList();
                 if (requirements.isEmpty() && fluidRequirements.isEmpty()) {
                     continue;
                 }
-                int duration = recipe.getProcessingDuration() > 0
-                        ? Math.max(20, recipe.getProcessingDuration()) : DEFAULT_DURATION;
+                List<ItemStack> itemOutputs = AddonRecipeIntrospection.itemOutputs(recipe, level);
+                List<FluidStack> fluidOutputs = processing == null ? List.of()
+                        : processing.getFluidResults().stream().map(FluidStack::copy).toList();
+                if (itemOutputs.isEmpty() && fluidOutputs.isEmpty()) {
+                    continue;
+                }
+                int duration = processing != null && processing.getProcessingDuration() > 0
+                        ? Math.max(20, processing.getProcessingDuration()) : DEFAULT_DURATION;
                 long energyPerTick = 0;
                 if (!profile.kinetic()) {
                     Optional<NativeRecipeEnergy.EnergyProfile> nativeEnergy =
@@ -407,13 +510,16 @@ public final class SimulationRecipeResolver {
                 }
                 String process = "dynamic_" + binding.id().getNamespace() + "_"
                         + binding.id().getPath().replace('/', '_');
+                List<DisplayOutput> displayOutputs = processing == null
+                        ? itemOutputs.stream().map(stack -> new DisplayOutput(stack, 1)).toList()
+                        : displayOutputs(processing.getRollableResults(), false);
                 target.add(new Candidate(
                         derivedId(holder.id(), process), process, requirements,
-                        fluidRequirements, displayOutputs(recipe.getRollableResults(), false),
-                        recipe.getFluidResults().stream().map(FluidStack::copy).toList(),
+                        fluidRequirements, displayOutputs, fluidOutputs,
                         0, 1, requirements.size(), 50, duration,
-                        (level, match) -> appendRemainders(
-                                recipe.rollResults(level.random), match),
+                        (recipeLevel, match) -> appendRemainders(
+                                processing == null ? itemOutputs
+                                        : processing.rollResults(recipeLevel.random), match),
                         energyPerTick));
             }
         }
@@ -822,7 +928,7 @@ public final class SimulationRecipeResolver {
             if (requirement.consumed) {
                 consumedRequirementIndexes.add(requirementIndex);
             } else {
-                int slot = findMatchingSlot(inventory, requirement.ingredient);
+                int slot = findMatchingSlot(inventory, requirement);
                 if (slot < 0) {
                     return null;
                 }
@@ -853,7 +959,7 @@ public final class SimulationRecipeResolver {
             flow.addEdge(firstRequirement + compactRequirement, sink, demand);
             for (int slot = 0; slot < slotCount; slot++) {
                 ItemStack stack = inventory.get(slot);
-                if (!stack.isEmpty() && requirement.ingredient.test(stack)) {
+                if (!stack.isEmpty() && requirement.test(stack)) {
                     assignmentEdges[slot][compactRequirement] = flow.addEdge(
                             firstSlot + slot, firstRequirement + compactRequirement, stack.getCount());
                 }
@@ -904,9 +1010,9 @@ public final class SimulationRecipeResolver {
         return new Match(stackUses, catalystUses, assigned);
     }
 
-    private static int findMatchingSlot(List<ItemStack> inventory, Ingredient ingredient) {
+    private static int findMatchingSlot(List<ItemStack> inventory, Requirement requirement) {
         for (int slot = 0; slot < inventory.size(); slot++) {
-            if (ingredient.test(inventory.get(slot))) {
+            if (requirement.test(inventory.get(slot))) {
                 return slot;
             }
         }
@@ -1044,10 +1150,31 @@ public final class SimulationRecipeResolver {
         }
     }
 
-    private record Requirement(Ingredient ingredient, int count, boolean consumed, int craftPosition) {
+    private record Requirement(Ingredient ingredient, int count, boolean consumed,
+                               int craftPosition, ItemStack exactStack) {
+        private Requirement(Ingredient ingredient, int count, boolean consumed,
+                            int craftPosition) {
+            this(ingredient, count, consumed, craftPosition, ItemStack.EMPTY);
+        }
+
+        private Requirement {
+            exactStack = exactStack.copyWithCount(exactStack.isEmpty() ? 0 : 1);
+        }
+
+        private boolean test(ItemStack stack) {
+            return exactStack.isEmpty() ? ingredient.test(stack)
+                    : ItemStack.isSameItemSameComponents(stack, exactStack);
+        }
     }
 
     private record FluidRequirement(SizedFluidIngredient ingredient) {
+    }
+
+    private record EnergyChargePlan(ItemStack output, int duration,
+                                    long energyPerTick) {
+        private EnergyChargePlan {
+            output = output.copyWithCount(1);
+        }
     }
 
     private record Candidate(ResourceLocation id, String process, List<Requirement> requirements,

@@ -73,5 +73,6 @@
   "jei.mekanicalcreate.process.mixing": "动力搅拌",
   "jei.mekanicalcreate.process.compacting": "动力压块",
   "jei.mekanicalcreate.process.filling": "注液",
-  "jei.mekanicalcreate.process.emptying": "排液"
+  "jei.mekanicalcreate.process.emptying": "排液",
+  "jei.mekanicalcreate.process.native_item_charging": "物品充电"
 }

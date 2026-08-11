@@ -2,16 +2,18 @@
   "homepage": "https://github.com/LangQi99/Mekanical-Create/releases/latest",
   "1.20.1": {
     "0.2.0": "Adds expandable fluid multiblock factories, configurable item/fluid/energy ports, upgrade cores, dynamic GUIs, and complete JEI integration.",
-    "0.2.1": "Fixes Mekanical Create machines and multiblock components not dropping when mined with a pickaxe."
+    "0.2.1": "Fixes Mekanical Create machines and multiblock components not dropping when mined with a pickaxe.",
+    "0.2.2": "Adds automatic Create-addon recipe discovery, KubeJS recipe support, native FE item charging, and lowers the minimum supported Forge version to 47.1.7."
   },
   "1.21.1": {
     "0.2.0": "Adds expandable fluid multiblock factories, configurable item/fluid/energy ports, upgrade cores, dynamic GUIs, and complete JEI integration.",
-    "0.2.1": "Fixes Mekanical Create machines and multiblock components not dropping when mined with a pickaxe."
+    "0.2.1": "Fixes Mekanical Create machines and multiblock components not dropping when mined with a pickaxe.",
+    "0.2.2": "Adds automatic Create-addon recipe discovery, KubeJS recipe support, native FE item charging, and lowers the minimum supported NeoForge version to 21.1.219."
   },
   "promos": {
-    "1.20.1-latest": "0.2.1",
-    "1.20.1-recommended": "0.2.1",
-    "1.21.1-latest": "0.2.1",
-    "1.21.1-recommended": "0.2.1"
+    "1.20.1-latest": "0.2.2",
+    "1.20.1-recommended": "0.2.2",
+    "1.21.1-latest": "0.2.2",
+    "1.21.1-recommended": "0.2.2"
   }
 }

@@ -73,5 +73,6 @@
   "jei.mekanicalcreate.process.mixing": "Mixing",
   "jei.mekanicalcreate.process.compacting": "Compacting",
   "jei.mekanicalcreate.process.filling": "Filling",
-  "jei.mekanicalcreate.process.emptying": "Emptying"
+  "jei.mekanicalcreate.process.emptying": "Emptying",
+  "jei.mekanicalcreate.process.native_item_charging": "Item Charging"
 }

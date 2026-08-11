@@ -1,6 +1,5 @@
 package io.github.langqi99.mekanicalcreate.content;
 
-import com.simibubi.create.api.stress.BlockStressValues;
 import com.simibubi.create.content.kinetics.base.IRotate;
 import com.simibubi.create.content.processing.recipe.ProcessingRecipe;
 import io.github.langqi99.mekanicalcreate.MekanicalCreate;
@@ -26,6 +25,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.item.crafting.RecipeType;
@@ -83,17 +83,15 @@ public final class CreateFamilyRecipeDiscovery {
                 continue;
             }
             List<RecipeHolder<?>> recipes = allRecipesFor(manager, type);
-            List<ProcessingRecipe<?, ?>> processing = new ArrayList<>();
+            List<Recipe<?>> addonRecipes = new ArrayList<>();
             for (RecipeHolder<?> holder : recipes) {
-                if (holder.value() instanceof ProcessingRecipe<?, ?> recipe) {
-                    processing.add(recipe);
-                }
+                addonRecipes.add(holder.value());
             }
-            if (processing.isEmpty()) {
+            if (addonRecipes.isEmpty()) {
                 continue;
             }
-            List<ProcessingRecipe<?, ?>> transformations = processing.stream()
-                    .filter(CreateFamilyRecipeDiscovery::hasOutput)
+            List<Recipe<?>> transformations = addonRecipes.stream()
+                    .filter(AddonRecipeIntrospection::hasPotentialItemTransformation)
                     .toList();
             if (transformations.isEmpty()) {
                 nonTransformingTypes.add(typeId);
@@ -114,6 +112,14 @@ public final class CreateFamilyRecipeDiscovery {
                     .bindings.add(new RecipeTypeBinding(typeId, type, hasItemOnly, hasFluid));
         }
 
+        // A few electric Create-addon machines perform capability-based work
+        // in addition to their data-driven recipes. Tesla coils, for example,
+        // can charge any FE item without a recipe JSON. Keep those modules in
+        // the discovered set even when that is their only supported operation.
+        modules.stream().filter(ModuleCandidate::chargesItems)
+                .forEach(module -> profiles.computeIfAbsent(module.item(),
+                        ignored -> new MutableProfile(module)));
+
         List<DynamicModuleProfile> result = profiles.values().stream()
                 .map(MutableProfile::freeze)
                 .toList();
@@ -124,7 +130,8 @@ public final class CreateFamilyRecipeDiscovery {
                         .toList()
                         + " @ " + (profile.kinetic()
                         ? StressEnergyConverter.energyPerTick(profile.module(), 1) + " FE/t"
-                        : "native FE"))
+                        : "native FE")
+                        + (profile.chargesItems() ? " + item charging" : ""))
                 .toList();
         MekanicalCreate.LOGGER.info(
                 "Create-family discovery found mods {}, dynamic bindings {}, unmatched processing types {} "
@@ -174,22 +181,55 @@ public final class CreateFamilyRecipeDiscovery {
                     || !familyNamespaces.contains(id.getNamespace())) {
                 continue;
             }
-            boolean kinetic = block instanceof IRotate
-                    && BlockStressValues.getImpact(block) > 0;
+            // Some addons calculate stress in their block entity instead of
+            // registering a value in Create's BlockStressValues table. IRotate
+            // is therefore the reliable signal that a module is kinetic; the
+            // converter resolves the actual stress value separately.
+            boolean kinetic = block instanceof IRotate;
             Set<Class<?>> referencedRecipes = referencedProcessingRecipes(block);
-            if (!kinetic && referencedRecipes.isEmpty()) {
+            boolean chargesItems = supportsItemCharging(block);
+            if (!kinetic && referencedRecipes.isEmpty() && !chargesItems) {
                 continue;
             }
             Item item = block.asItem();
             if (item instanceof BlockItem) {
-                result.add(new ModuleCandidate(id, item, kinetic, referencedRecipes));
+                result.add(new ModuleCandidate(id, item, kinetic, chargesItems,
+                        referencedRecipes));
             }
         }
         return result;
     }
 
+    private static boolean supportsItemCharging(Block block) {
+        if (!(block instanceof EntityBlock entityBlock)) {
+            return false;
+        }
+        try {
+            BlockEntity blockEntity = entityBlock.newBlockEntity(
+                    BlockPos.ZERO, block.defaultBlockState());
+            if (blockEntity == null) {
+                return false;
+            }
+            for (Class<?> type = blockEntity.getClass(); type != null
+                    && type != BlockEntity.class; type = type.getSuperclass()) {
+                for (java.lang.reflect.Method method : type.getDeclaredMethods()) {
+                    String name = method.getName().toLowerCase(Locale.ROOT);
+                    if (name.contains("charge") && Arrays.stream(method.getParameterTypes())
+                            .anyMatch(ItemStack.class::isAssignableFrom)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (LinkageError | RuntimeException exception) {
+            MekanicalCreate.LOGGER.debug(
+                    "Could not inspect item charging support for {}",
+                    BuiltInRegistries.BLOCK.getKey(block), exception);
+        }
+        return false;
+    }
+
     private static Optional<ModuleCandidate> matchModule(
-            ResourceLocation recipeType, List<ProcessingRecipe<?, ?>> recipes,
+            ResourceLocation recipeType, List<Recipe<?>> recipes,
             List<ModuleCandidate> modules) {
         int bestScore = 0;
         ModuleCandidate best = null;
@@ -252,7 +292,8 @@ public final class CreateFamilyRecipeDiscovery {
 
     private static void collectProcessingRecipeTypes(Type type, Set<Class<?>> result) {
         if (type instanceof Class<?> clazz) {
-            if (ProcessingRecipe.class.isAssignableFrom(clazz)
+            if (Recipe.class.isAssignableFrom(clazz)
+                    && clazz != Recipe.class
                     && clazz != ProcessingRecipe.class) {
                 result.add(clazz);
             }
@@ -322,13 +363,10 @@ public final class CreateFamilyRecipeDiscovery {
         return token;
     }
 
-    private static boolean requiresFluids(ProcessingRecipe<?, ?> recipe) {
-        return !recipe.getFluidIngredients().isEmpty() || !recipe.getFluidResults().isEmpty();
-    }
-
-    private static boolean hasOutput(ProcessingRecipe<?, ?> recipe) {
-        return !recipe.getRollableResults().isEmpty()
-                || !recipe.getFluidResults().isEmpty();
+    private static boolean requiresFluids(Recipe<?> recipe) {
+        return recipe instanceof ProcessingRecipe<?, ?> processing
+                && (!processing.getFluidIngredients().isEmpty()
+                || !processing.getFluidResults().isEmpty());
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -341,19 +379,21 @@ public final class CreateFamilyRecipeDiscovery {
     }
 
     record DynamicModuleProfile(ResourceLocation moduleId, ItemStack module,
-                                boolean kinetic, List<RecipeTypeBinding> bindings) {
+                                boolean kinetic, boolean chargesItems,
+                                List<RecipeTypeBinding> bindings) {
         DynamicModuleProfile {
             module = module.copyWithCount(1);
             bindings = List.copyOf(bindings);
         }
 
         boolean supports(boolean allowFluidProcessing) {
-            return bindings.stream().anyMatch(binding -> binding.hasItemOnlyRecipes()
+            return chargesItems || bindings.stream().anyMatch(binding -> binding.hasItemOnlyRecipes()
                     || allowFluidProcessing && binding.hasFluidRecipes());
         }
     }
 
     private record ModuleCandidate(ResourceLocation id, Item item, boolean kinetic,
+                                   boolean chargesItems,
                                    Set<Class<?>> referencedRecipes) {
     }
 
@@ -376,7 +416,7 @@ public final class CreateFamilyRecipeDiscovery {
 
         private DynamicModuleProfile freeze() {
             return new DynamicModuleProfile(module.id(), new ItemStack(module.item()),
-                    module.kinetic(), bindings);
+                    module.kinetic(), module.chargesItems(), bindings);
         }
     }
 }
