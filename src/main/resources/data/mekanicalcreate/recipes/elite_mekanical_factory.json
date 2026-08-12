@@ -3,8 +3,8 @@
   "category": "misc",
   "key": {
     "A": { "tag": "mekanism:alloys/reinforced" },
-    "C": { "tag": "c:circuits/elite" },
-    "I": { "tag": "c:ingots/gold" },
+    "C": { "tag": "forge:circuits/elite" },
+    "I": { "tag": "forge:ingots/gold" },
     "P": { "item": "mekanicalcreate:advanced_mekanical_factory" }
   },
   "pattern": [

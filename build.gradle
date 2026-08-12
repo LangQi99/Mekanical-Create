@@ -230,8 +230,28 @@ tasks.register('validateBlockDrops') {
     }
 }
 
+def recipeFiles = fileTree('src/main/resources/data') {
+    include '**/recipes/**/*.json'
+}
+
+tasks.register('validateLegacyForgeRecipeTags') {
+    group = 'verification'
+    description = 'Rejects NeoForge c: item tags accidentally copied into the Minecraft 1.20.1 Forge branch.'
+    inputs.files(recipeFiles)
+
+    doLast {
+        def invalidFiles = recipeFiles.files.findAll {
+            it.getText('UTF-8') =~ /"tag"\s*:\s*"c:/
+        }.collect { project.relativePath(it) }
+        if (!invalidFiles.empty) {
+            throw new GradleException("Minecraft 1.20.1 recipes must use Forge tags, but c: tags were found in: ${invalidFiles.sort()}")
+        }
+    }
+}
+
 tasks.named('check').configure {
     dependsOn tasks.named('validateBlockDrops')
+    dependsOn tasks.named('validateLegacyForgeRecipeTags')
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

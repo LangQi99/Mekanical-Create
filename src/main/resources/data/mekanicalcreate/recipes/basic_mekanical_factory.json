@@ -3,8 +3,8 @@
   "category": "misc",
   "key": {
     "A": { "tag": "mekanism:alloys/basic" },
-    "C": { "tag": "c:circuits/basic" },
-    "I": { "tag": "c:ingots/iron" },
+    "C": { "tag": "forge:circuits/basic" },
+    "I": { "tag": "forge:ingots/iron" },
     "P": { "item": "mekanicalcreate:simulation_chamber" }
   },
   "pattern": [

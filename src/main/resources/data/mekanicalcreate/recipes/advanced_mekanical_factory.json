@@ -3,8 +3,8 @@
   "category": "misc",
   "key": {
     "A": { "tag": "mekanism:alloys/infused" },
-    "C": { "tag": "c:circuits/advanced" },
-    "I": { "tag": "c:ingots/osmium" },
+    "C": { "tag": "forge:circuits/advanced" },
+    "I": { "tag": "forge:ingots/osmium" },
     "P": { "item": "mekanicalcreate:basic_mekanical_factory" }
   },
   "pattern": [
