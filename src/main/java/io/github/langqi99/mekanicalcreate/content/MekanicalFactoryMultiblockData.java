@@ -100,19 +100,29 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
     private int catalystCoreCount;
 
     private boolean planDirty = true;
+    private long observedRecipeEpoch = SimulationRecipeResolver.cacheEpoch();
+    private final RecipeLookupThrottle lookupThrottle = new RecipeLookupThrottle();
+    private final RecipeRoundRobinState fallbackRoundRobinState = new RecipeRoundRobinState();
+    private boolean repeatEligible;
+    private long lastGameTime;
+    @Nullable
+    private Level currentLevel;
     @Nullable
     private ExecutionPlan activePlan;
+    @Nullable
+    private ExecutionPlan repeatPlan;
 
     public MekanicalFactoryMultiblockData(MekanicalFactoryBlockEntity tile) {
         super(tile);
 
         IContentsListener configurationListener = () -> {
             markDirty();
+            lookupThrottle.clear();
             invalidatePlan();
         };
         IContentsListener inputListener = () -> {
             markDirty();
-            planDirty = true;
+            onInputsChanged();
         };
 
         energyContainers.add(energyContainer = new FactoryEnergyContainer());
@@ -214,9 +224,20 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
 
     @Override
     public boolean tick(Level level) {
+        currentLevel = level;
+        lastGameTime = level.getGameTime();
         boolean needsPacket = super.tick(level);
         energySlot.fillContainerOrConvert();
         fluidContainerSlot.handleContainer(fluidContainerOutputSlot);
+
+        long recipeEpoch = SimulationRecipeResolver.cacheEpoch();
+        if (observedRecipeEpoch != recipeEpoch) {
+            observedRecipeEpoch = recipeEpoch;
+            lookupThrottle.clear();
+            lookupThrottle.deferUntil(level.getGameTime()
+                    + Math.floorMod(getMinPos().hashCode(), 5));
+            invalidatePlan();
+        }
 
         if (activePlan != null && planDirty) {
             if (!activePlan.stillValid(inputSlots, activeInputFluidTanks())) {
@@ -226,14 +247,35 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
             }
         }
         if (activePlan == null) {
-            activePlan = SimulationRecipeResolver.resolve(level, activeCatalystSlots(),
-                    inputSlots, activeInputFluidTanks(), true).orElse(null);
+            if (!planDirty) {
+                return setIdle(needsPacket);
+            }
+            if (lookupThrottle.shouldWait(level.getGameTime())) {
+                if (lookupThrottle.isExplicitWait(level.getGameTime())) {
+                    SimulationRecipeResolver.recordReloadDeferral();
+                } else {
+                    SimulationRecipeResolver.recordDebounceDeferral();
+                }
+                return setIdle(needsPacket);
+            }
+            if (repeatEligible && repeatPlan != null) {
+                activePlan = repeatPlan.repeat(level, inputSlots, activeInputFluidTanks())
+                        .orElse(null);
+            }
+            repeatEligible = false;
+            repeatPlan = null;
+            if (activePlan == null) {
+                activePlan = SimulationRecipeResolver.resolve(level, activeCatalystSlots(),
+                        inputSlots, activeInputFluidTanks(), true,
+                        roundRobinState()).orElse(null);
+            }
+            planDirty = false;
+            lookupThrottle.resolved();
             if (activePlan == null) {
                 return setIdle(needsPacket);
             }
             progress = 0;
             duration = getAdjustedDuration(activePlan.duration());
-            planDirty = false;
         }
         if (!canFit(activePlan.itemResults(), activePlan.fluidResults())) {
             return setInactive(needsPacket, false);
@@ -255,13 +297,18 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
                 invalidatePlan();
                 return setInactive(true, false);
             }
+            ExecutionPlan completedPlan = activePlan;
             activePlan.consume(inputSlots, activeInputFluidTanks());
             insertResults(activePlan.itemResults());
             insertFluidResults(activePlan.fluidResults());
+            advanceRoundRobin(activePlan);
             activePlan = null;
             progress = 0;
             duration = DEFAULT_DURATION;
             planDirty = true;
+            repeatPlan = completedPlan;
+            repeatEligible = true;
+            lookupThrottle.clear();
             markDirty();
             needsPacket = true;
         }
@@ -290,9 +337,18 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
 
     private void invalidatePlan() {
         activePlan = null;
+        repeatPlan = null;
+        repeatEligible = false;
         planDirty = true;
         progress = 0;
         duration = DEFAULT_DURATION;
+    }
+
+    private void onInputsChanged() {
+        planDirty = true;
+        repeatPlan = null;
+        repeatEligible = false;
+        lookupThrottle.inputChanged(lastGameTime);
     }
 
     private void insertResults(List<ItemStack> results) {
@@ -523,6 +579,36 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
 
     private List<BasicInventorySlot> activeCatalystSlots() {
         return catalystSlots.subList(0, getCatalystSlotCount());
+    }
+
+    private RecipeRoundRobinState roundRobinState() {
+        MekanicalFactoryControllerBlockEntity controller = roundRobinController();
+        return controller == null
+                ? fallbackRoundRobinState : controller.getRecipeRoundRobinState();
+    }
+
+    private void advanceRoundRobin(ExecutionPlan plan) {
+        MekanicalFactoryControllerBlockEntity controller = roundRobinController();
+        RecipeRoundRobinState state = controller == null
+                ? fallbackRoundRobinState : controller.getRecipeRoundRobinState();
+        plan.advanceRoundRobin(state);
+        if (controller != null) {
+            controller.roundRobinChanged();
+        }
+    }
+
+    @Nullable
+    private MekanicalFactoryControllerBlockEntity roundRobinController() {
+        Level level = currentLevel;
+        if (level != null) {
+            for (BlockPos location : locations) {
+                if (level.getBlockEntity(location)
+                        instanceof MekanicalFactoryControllerBlockEntity controller) {
+                    return controller;
+                }
+            }
+        }
+        return null;
     }
 
     private static final class DynamicOutputInventorySlot extends BasicInventorySlot {
