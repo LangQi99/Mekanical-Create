@@ -17,7 +17,7 @@ Mekanical Create virtualizes Create processing and sequenced assembly inside a c
 [[dependencies.${mod_id}]]
 modId="forge"
 mandatory=true
-versionRange="[47.1.7,)"
+versionRange="[47.1.25,)"
 ordering="NONE"
 side="BOTH"
 
