@@ -87,8 +87,13 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     private int progress;
     private int duration = DEFAULT_DURATION;
     private boolean planDirty = true;
+    private long observedRecipeEpoch = SimulationRecipeResolver.cacheEpoch();
+    private final RecipeLookupThrottle lookupThrottle = new RecipeLookupThrottle();
+    private boolean repeatEligible;
     @Nullable
     private ExecutionPlan activePlan;
+    @Nullable
+    private ExecutionPlan repeatPlan;
 
     public SimulationChamberBlockEntity(BlockPos pos, BlockState state) {
         this(ModBlocks.SIMULATION_CHAMBER, pos, state);
@@ -195,7 +200,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         outputFluidTanks = new ArrayList<>(OUTPUT_FLUID_TANK_COUNT);
         IContentsListener inputListener = () -> {
             listener.onContentsChanged();
-            planDirty = true;
+            onInputsChanged();
         };
         FluidTankHelper builder = FluidTankHelper.forSideWithConfig(this);
         for (int tank = 0; tank < INPUT_FLUID_TANK_COUNT; tank++) {
@@ -217,11 +222,12 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
 
         IContentsListener configurationListener = () -> {
             listener.onContentsChanged();
+            lookupThrottle.clear();
             invalidatePlan();
         };
         IContentsListener inputListener = () -> {
             listener.onContentsChanged();
-            planDirty = true;
+            onInputsChanged();
         };
 
         InventorySlotHelper builder = InventorySlotHelper.forSideWithConfig(this);
@@ -281,6 +287,15 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             return sendUpdatePacket;
         }
 
+        long recipeEpoch = SimulationRecipeResolver.cacheEpoch();
+        if (observedRecipeEpoch != recipeEpoch) {
+            observedRecipeEpoch = recipeEpoch;
+            lookupThrottle.clear();
+            lookupThrottle.deferUntil(level.getGameTime()
+                    + Math.floorMod(getBlockPos().hashCode(), 5));
+            invalidatePlan();
+        }
+
         if (activePlan != null && planDirty) {
             if (!activePlan.stillValid(inputSlots,
                     supportsFluids() ? inputFluidTanks : List.of())) {
@@ -291,9 +306,34 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         }
 
         if (activePlan == null) {
-            activePlan = SimulationRecipeResolver.resolve(
-                    level, moduleSlot.getStack(), conditionSlot.getStack(), inputSlots,
-                    supportsFluids() ? inputFluidTanks : List.of(), supportsFluids()).orElse(null);
+            if (!planDirty) {
+                resetIdle();
+                return sendUpdatePacket;
+            }
+            if (lookupThrottle.shouldWait(level.getGameTime())) {
+                if (lookupThrottle.isExplicitWait(level.getGameTime())) {
+                    SimulationRecipeResolver.recordReloadDeferral();
+                } else {
+                    SimulationRecipeResolver.recordDebounceDeferral();
+                }
+                resetIdle();
+                return sendUpdatePacket;
+            }
+            List<? extends IExtendedFluidTank> activeInputFluids = supportsFluids()
+                    ? inputFluidTanks : List.of();
+            if (repeatEligible && repeatPlan != null) {
+                activePlan = repeatPlan.repeat(level, inputSlots, activeInputFluids)
+                        .orElse(null);
+            }
+            repeatEligible = false;
+            repeatPlan = null;
+            if (activePlan == null) {
+                activePlan = SimulationRecipeResolver.resolve(
+                        level, moduleSlot.getStack(), conditionSlot.getStack(), inputSlots,
+                        activeInputFluids, supportsFluids()).orElse(null);
+            }
+            planDirty = false;
+            lookupThrottle.resolved();
             if (activePlan == null) {
                 resetIdle();
                 return sendUpdatePacket;
@@ -301,7 +341,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             progress = 0;
             duration = MekanismUtils.getTicks(this, getTierDuration(activePlan.duration()));
             energyContainer.setEnergyPerTick(getTierEnergyUsage(activePlan.energyPerTick()));
-            planDirty = false;
         }
 
         if (!canFit(activePlan.itemResults(), activePlan.fluidResults())) {
@@ -326,6 +365,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                 setActive(false);
                 return sendUpdatePacket;
             }
+            ExecutionPlan completedPlan = activePlan;
             activePlan.consume(inputSlots, supportsFluids() ? inputFluidTanks : List.of());
             insertResults(activePlan.itemResults());
             insertFluidResults(activePlan.fluidResults());
@@ -334,6 +374,9 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             duration = DEFAULT_DURATION;
             resetEnergyUsage();
             planDirty = true;
+            repeatPlan = completedPlan;
+            repeatEligible = true;
+            lookupThrottle.clear();
         }
         markForSave();
         return sendUpdatePacket;
@@ -420,12 +463,24 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
 
     private void invalidatePlan() {
         activePlan = null;
+        repeatPlan = null;
+        repeatEligible = false;
         planDirty = true;
         progress = 0;
         duration = DEFAULT_DURATION;
         resetEnergyUsage();
         if (getLevel() != null) {
             markForSave();
+        }
+    }
+
+    private void onInputsChanged() {
+        planDirty = true;
+        repeatPlan = null;
+        repeatEligible = false;
+        Level level = getLevel();
+        if (level != null) {
+            lookupThrottle.inputChanged(level.getGameTime());
         }
     }
 
@@ -528,7 +583,10 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         progress = 0;
         duration = DEFAULT_DURATION;
         activePlan = null;
+        repeatPlan = null;
+        repeatEligible = false;
         planDirty = true;
+        lookupThrottle.clear();
         resetEnergyUsage();
     }
 
@@ -610,7 +668,10 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         progress = 0;
         duration = DEFAULT_DURATION;
         activePlan = null;
+        repeatPlan = null;
+        repeatEligible = false;
         planDirty = true;
+        lookupThrottle.clear();
         resetEnergyUsage();
     }
 
