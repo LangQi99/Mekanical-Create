@@ -51,7 +51,6 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -89,6 +88,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     private boolean planDirty = true;
     private long observedRecipeEpoch = SimulationRecipeResolver.cacheEpoch();
     private final RecipeLookupThrottle lookupThrottle = new RecipeLookupThrottle();
+    private final RecipeRoundRobinState roundRobinState = new RecipeRoundRobinState();
     private boolean repeatEligible;
     @Nullable
     private ExecutionPlan activePlan;
@@ -235,8 +235,9 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                 this::isSupportedModule, configurationListener, 25, 24, 1));
         conditionSlot = builder.addSlot(new BasicInventorySlot(1,
                 (stack, automation) -> true,
-                (stack, automation) -> isFanModuleInstalled(),
-                SimulationChamberBlockEntity::isSupportedCondition,
+                (stack, automation) -> isConditionModuleInstalled(),
+                stack -> SimulationRecipeResolver.isCompatibleCondition(
+                        moduleSlot.getStack(), stack),
                 configurationListener, 25, 42) {
             @Override
             public InventoryContainerSlot createContainerSlot() {
@@ -246,7 +247,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                     public boolean isActive() {
                         // Keep a populated slot reachable so the player can always
                         // remove its marker after changing the module.
-                        return isFanModuleInstalled() || !isEmpty();
+                        return isConditionModuleInstalled() || !isEmpty();
                     }
                 };
             }
@@ -330,7 +331,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             if (activePlan == null) {
                 activePlan = SimulationRecipeResolver.resolve(
                         level, moduleSlot.getStack(), conditionSlot.getStack(), inputSlots,
-                        activeInputFluids, supportsFluids()).orElse(null);
+                        activeInputFluids, supportsFluids(), roundRobinState).orElse(null);
             }
             planDirty = false;
             lookupThrottle.resolved();
@@ -369,6 +370,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             activePlan.consume(inputSlots, supportsFluids() ? inputFluidTanks : List.of());
             insertResults(activePlan.itemResults());
             insertFluidResults(activePlan.fluidResults());
+            activePlan.advanceRoundRobin(roundRobinState);
             activePlan = null;
             progress = 0;
             duration = DEFAULT_DURATION;
@@ -509,6 +511,11 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         return moduleSlot.getStack().is(AllBlocks.ENCASED_FAN.asItem());
     }
 
+    public boolean isConditionModuleInstalled() {
+        return isFanModuleInstalled()
+                || CreateSifterCompat.isSifterModule(moduleSlot.getStack());
+    }
+
     public BasicInventorySlot getModuleSlot() {
         return moduleSlot;
     }
@@ -573,11 +580,13 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         super.saveAdditional(tag, provider);
         tag.putInt("Progress", progress);
         tag.putInt("Duration", duration);
+        RecipeRoundRobinNbt.write(tag, roundRobinState);
     }
 
     @Override
     public void loadAdditional(CompoundTag tag, HolderLookup.Provider provider) {
         super.loadAdditional(tag, provider);
+        RecipeRoundRobinNbt.read(tag, roundRobinState);
         // Active plans are deliberately ephemeral. Re-resolve after a reload so a
         // datapack recipe change can never finish an old operation.
         progress = 0;
@@ -691,10 +700,4 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                 && SimulationRecipeResolver.isSupportedModule(level, stack, supportsFluids());
     }
 
-    private static boolean isSupportedCondition(ItemStack stack) {
-        return stack.is(Items.LAVA_BUCKET)
-                || stack.is(Items.WATER_BUCKET)
-                || stack.is(Items.SOUL_CAMPFIRE)
-                || stack.is(Items.CAMPFIRE);
-    }
 }

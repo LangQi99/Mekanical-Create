@@ -5,12 +5,16 @@ import mekanism.common.lib.multiblock.MultiblockManager;
 import mekanism.common.tile.prefab.TileEntityMultiblock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.NotNull;
 
 /** Common external node for the fixed Mekanical Factory multiblock. */
 public class MekanicalFactoryBlockEntity extends TileEntityMultiblock<MekanicalFactoryMultiblockData> {
+    private final RecipeRoundRobinState roundRobinState = new RecipeRoundRobinState();
+
     protected MekanicalFactoryBlockEntity(Holder<Block> blockProvider, BlockPos pos, BlockState state) {
         super(blockProvider, pos, state);
     }
@@ -29,5 +33,25 @@ public class MekanicalFactoryBlockEntity extends TileEntityMultiblock<MekanicalF
     @Override
     public boolean canBeMaster() {
         return false;
+    }
+
+    RecipeRoundRobinState getRecipeRoundRobinState() {
+        return roundRobinState;
+    }
+
+    void roundRobinChanged() {
+        markForSave();
+    }
+
+    @Override
+    public void saveAdditional(CompoundTag tag, HolderLookup.Provider provider) {
+        super.saveAdditional(tag, provider);
+        RecipeRoundRobinNbt.write(tag, roundRobinState);
+    }
+
+    @Override
+    public void loadAdditional(CompoundTag tag, HolderLookup.Provider provider) {
+        super.loadAdditional(tag, provider);
+        RecipeRoundRobinNbt.read(tag, roundRobinState);
     }
 }

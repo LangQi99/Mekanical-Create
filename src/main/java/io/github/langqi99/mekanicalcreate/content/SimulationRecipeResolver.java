@@ -31,6 +31,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.WeakHashMap;
@@ -89,6 +90,7 @@ public final class SimulationRecipeResolver {
     public static synchronized void clearCache() {
         CANDIDATE_CACHE.clear();
         RESOLUTION_CACHE.clear();
+        CreateSifterCompat.clearCache();
         cacheEpoch++;
     }
 
@@ -116,8 +118,17 @@ public final class SimulationRecipeResolver {
                 AllBlocks.SPOUT.asStack(), AllBlocks.ITEM_DRAIN.asStack())) {
             prewarmCatalog(level, module, ItemStack.EMPTY, true);
         }
+        for (ItemStack module : CreateSifterCompat.sifterModules()) {
+            for (ItemStack mesh : CreateSifterCompat.meshes(level)) {
+                prewarmCatalog(level, module, mesh, false);
+                prewarmCatalog(level, module, mesh, true);
+            }
+        }
         for (CreateFamilyRecipeDiscovery.DynamicModuleProfile profile
                 : CreateFamilyRecipeDiscovery.profiles(level)) {
+            if (CreateSifterCompat.isSifterModule(profile.module())) {
+                continue;
+            }
             if (profile.supports(false)) {
                 prewarmCatalog(level, profile.module(), ItemStack.EMPTY, false);
             }
@@ -156,7 +167,8 @@ public final class SimulationRecipeResolver {
     static Optional<ExecutionPlan> resolve(Level level, ItemStack module, ItemStack condition,
                                            List<? extends IInventorySlot> inputSlots,
                                            List<? extends IExtendedFluidTank> inputFluidTanks,
-                                           boolean allowFluidProcessing) {
+                                           boolean allowFluidProcessing,
+                                           RecipeRoundRobinState roundRobinState) {
         if (module.isEmpty() || !isSupportedModule(level, module, allowFluidProcessing)) {
             return Optional.empty();
         }
@@ -168,7 +180,8 @@ public final class SimulationRecipeResolver {
         List<ItemStack> contextStacks = condition.isEmpty()
                 ? List.of(module) : List.of(module, condition);
         return resolve(level, inputSlots, inputFluidTanks, inventory, candidates,
-                new ResolverContext(ItemPoolKey.create(contextStacks), allowFluidProcessing));
+                new ResolverContext(ItemPoolKey.create(contextStacks), allowFluidProcessing),
+                roundRobinState);
     }
 
     /**
@@ -180,7 +193,8 @@ public final class SimulationRecipeResolver {
                                            List<? extends IInventorySlot> catalystSlots,
                                            List<? extends IInventorySlot> inputSlots,
                                            List<? extends IExtendedFluidTank> inputFluidTanks,
-                                           boolean allowFluidProcessing) {
+                                           boolean allowFluidProcessing,
+                                           RecipeRoundRobinState roundRobinState) {
         List<ItemStack> catalysts = distinctStacks(catalystSlots.stream()
                 .map(IInventorySlot::getStack)
                 .filter(stack -> !stack.isEmpty())
@@ -194,8 +208,12 @@ public final class SimulationRecipeResolver {
             if (!isSupportedModule(level, module, allowFluidProcessing)) {
                 continue;
             }
-            if (module.is(AllBlocks.ENCASED_FAN.asItem())) {
+            if (module.is(AllBlocks.ENCASED_FAN.asItem())
+                    || CreateSifterCompat.isSifterModule(module)) {
                 for (ItemStack condition : conditions) {
+                    if (!isCompatibleCondition(module, condition)) {
+                        continue;
+                    }
                     candidates.addAll(candidateCatalog(level, module, condition,
                             allowFluidProcessing).candidatesFor(inventory));
                 }
@@ -207,7 +225,8 @@ public final class SimulationRecipeResolver {
                     inventory);
         }
         return resolve(level, inputSlots, inputFluidTanks, inventory, candidates,
-                new ResolverContext(ItemPoolKey.create(catalysts), allowFluidProcessing));
+                new ResolverContext(ItemPoolKey.create(catalysts), allowFluidProcessing),
+                roundRobinState);
     }
 
     private static Optional<ExecutionPlan> resolve(Level level,
@@ -215,7 +234,8 @@ public final class SimulationRecipeResolver {
                                                    List<? extends IExtendedFluidTank> inputFluidTanks,
                                                    List<ItemStack> inventory,
                                                    List<Candidate> candidates,
-                                                   ResolverContext context) {
+                                                   ResolverContext context,
+                                                   RecipeRoundRobinState roundRobinState) {
         List<FluidStack> fluids = inputFluidTanks.stream().map(tank -> tank.getFluid().copy()).toList();
         int totalItems = inventory.stream().mapToInt(ItemStack::getCount).sum();
         int totalFluid = fluids.stream().mapToInt(FluidStack::getAmount).sum();
@@ -224,13 +244,17 @@ public final class SimulationRecipeResolver {
         CachedResolution cached = getCachedResolution(level.getRecipeManager(), cacheKey);
         if (cached != null) {
             DIAGNOSTICS.resolutionCacheHits.increment();
-            if (cached.candidate == null) {
+            if (cached.candidates.isEmpty()) {
                 return Optional.empty();
             }
-            CandidateMatch cachedMatch = match(cached.candidate, inventory, fluids,
-                    totalItems, totalFluid).orElse(null);
-            if (cachedMatch != null) {
-                return Optional.of(createPlan(level, cachedMatch, cached.exclusiveMatch));
+            List<CandidateMatch> cachedMatches = cached.candidates.stream()
+                    .map(candidate -> match(candidate, inventory, fluids,
+                            totalItems, totalFluid).orElse(null))
+                    .filter(Objects::nonNull)
+                    .toList();
+            if (cachedMatches.size() == cached.candidates.size()) {
+                return Optional.of(createPlan(level,
+                        selectMatch(cachedMatches, roundRobinState)));
             }
             // A defensive fallback for unusual mutable item capabilities. The
             // exact signature should normally make this path unreachable.
@@ -239,8 +263,7 @@ public final class SimulationRecipeResolver {
         DIAGNOSTICS.resolutionCacheMisses.increment();
         DIAGNOSTICS.fullSearches.increment();
         long searchStarted = System.nanoTime();
-        CandidateMatch best = null;
-        Set<ResourceLocation> matchedRecipes = new LinkedHashSet<>();
+        List<CandidateMatch> matches = new ArrayList<>();
         for (Candidate candidate : candidates) {
             DIAGNOSTICS.candidatesConsidered.increment();
             if (!canPossiblyMatch(candidate, inventory, fluids, totalItems, totalFluid)) {
@@ -253,23 +276,34 @@ public final class SimulationRecipeResolver {
             if (match == null) {
                 continue;
             }
-            matchedRecipes.add(candidate.id);
-            if (best == null || CandidateMatch.ORDER.compare(match, best) > 0) {
-                best = match;
-            }
+            matches.add(match);
         }
-        if (best == null) {
+        if (matches.isEmpty()) {
             putCachedResolution(level.getRecipeManager(), cacheKey,
                     CachedResolution.NO_MATCH);
             DIAGNOSTICS.noMatches.increment();
             DIAGNOSTICS.recordSearchTime(System.nanoTime() - searchStarted);
             return Optional.empty();
         }
-        boolean exclusiveMatch = matchedRecipes.size() == 1;
+        HighestPriorityRoundRobin.Selection<CandidateMatch> selected =
+                selectMatch(matches, roundRobinState);
+        List<Candidate> topCandidates = matches.stream()
+                .filter(match -> CandidateMatch.PREFERENCE_ORDER.compare(
+                        match, selected.value()) == 0)
+                .map(CandidateMatch::candidate)
+                .sorted(Comparator.comparing(candidate -> candidate.id.toString()))
+                .toList();
         putCachedResolution(level.getRecipeManager(), cacheKey,
-                new CachedResolution(best.candidate, exclusiveMatch));
+                new CachedResolution(topCandidates));
         DIAGNOSTICS.recordSearchTime(System.nanoTime() - searchStarted);
-        return Optional.of(createPlan(level, best, exclusiveMatch));
+        return Optional.of(createPlan(level, selected));
+    }
+
+    private static HighestPriorityRoundRobin.Selection<CandidateMatch> selectMatch(
+            List<CandidateMatch> matches, RecipeRoundRobinState roundRobinState) {
+        return HighestPriorityRoundRobin.select(matches,
+                CandidateMatch.PREFERENCE_ORDER,
+                match -> match.candidate.id.toString(), roundRobinState);
     }
 
     @Nullable
@@ -295,14 +329,15 @@ public final class SimulationRecipeResolver {
         }
     }
 
-    private static ExecutionPlan createPlan(Level level, CandidateMatch selected,
-                                            boolean exclusiveMatch) {
+    private static ExecutionPlan createPlan(
+            Level level, HighestPriorityRoundRobin.Selection<CandidateMatch> selection) {
+        CandidateMatch selected = selection.value();
         List<ItemStack> results = selected.candidate.resultFactory.apply(level, selected.match);
         return new ExecutionPlan(selected.candidate.id, selected.candidate.duration,
                 selected.candidate.energyPerTick,
                 selected.match.stackUses, selected.match.catalystUses,
                 selected.match.fluidUses, results, selected.candidate.fluidOutputs,
-                selected.candidate, exclusiveMatch);
+                selected.candidate, selection.group());
     }
 
     private static boolean canPossiblyMatch(Candidate candidate, List<ItemStack> inventory,
@@ -366,16 +401,28 @@ public final class SimulationRecipeResolver {
         boolean fluid = allowFluidProcessing && (stack.is(AllBlocks.MECHANICAL_MIXER.asItem())
                 || stack.is(AllBlocks.SPOUT.asItem())
                 || stack.is(AllBlocks.ITEM_DRAIN.asItem()));
-        return common || fluid || CreateFamilyRecipeDiscovery.profile(level, stack)
+        return common || fluid || CreateSifterCompat.isSifterModule(stack)
+                || CreateFamilyRecipeDiscovery.profile(level, stack)
                 .filter(profile -> profile.supports(allowFluidProcessing))
                 .isPresent();
     }
 
-    private static boolean isSupportedCondition(ItemStack stack) {
+    static boolean isSupportedCondition(ItemStack stack) {
         return stack.is(Items.LAVA_BUCKET)
                 || stack.is(Items.WATER_BUCKET)
                 || stack.is(Items.SOUL_CAMPFIRE)
-                || stack.is(Items.CAMPFIRE);
+                || stack.is(Items.CAMPFIRE)
+                || CreateSifterCompat.isMesh(stack);
+    }
+
+    static boolean isCompatibleCondition(ItemStack module, ItemStack condition) {
+        if (module.is(AllBlocks.ENCASED_FAN.asItem())) {
+            return !CreateSifterCompat.isMesh(condition);
+        }
+        if (CreateSifterCompat.isSifterModule(module)) {
+            return CreateSifterCompat.isMesh(condition);
+        }
+        return condition.isEmpty();
     }
 
     /**
@@ -408,8 +455,22 @@ public final class SimulationRecipeResolver {
             appendDisplayRecipes(result, collectCandidates(level, fan, condition,
                     allowFluidProcessing), fan, condition);
         }
+        for (ItemStack module : CreateSifterCompat.sifterModules()) {
+            for (ItemStack mesh : CreateSifterCompat.meshes(level)) {
+                appendDisplayRecipes(result, collectCandidates(level, module, mesh,
+                        allowFluidProcessing), module, mesh);
+            }
+        }
         for (CreateFamilyRecipeDiscovery.DynamicModuleProfile profile
                 : CreateFamilyRecipeDiscovery.profiles(level)) {
+            if (CreateSifterCompat.isSifterModule(profile.module())) {
+                for (ItemStack mesh : CreateSifterCompat.meshes(level)) {
+                    appendDisplayRecipes(result, collectCandidates(level,
+                                    profile.module(), mesh, allowFluidProcessing),
+                            profile.module(), mesh);
+                }
+                continue;
+            }
             if (profile.supports(allowFluidProcessing)) {
                 List<Candidate> candidates = new ArrayList<>(collectCandidates(
                         level, profile.module(), ItemStack.EMPTY,
@@ -654,6 +715,8 @@ public final class SimulationRecipeResolver {
                     "crushing", 10, false);
         } else if (module.is(AllBlocks.ENCASED_FAN.asItem())) {
             addFan(candidates, recipes, condition);
+        } else if (CreateSifterCompat.isSifterModule(module)) {
+            addSifting(candidates, level, module, condition);
         } else if (module.is(AllBlocks.MECHANICAL_CRAFTER.asItem())) {
             addCrafting(candidates, recipes.getAllRecipesFor(net.minecraft.world.item.crafting.RecipeType.CRAFTING),
                     "crafting", 10, level);
@@ -685,6 +748,40 @@ public final class SimulationRecipeResolver {
                         StressEnergyConverter.energyPerTick(module,
                                 candidate.complexity)))
                 .toList();
+    }
+
+    private static void addSifting(List<Candidate> target, Level level,
+                                   ItemStack module, ItemStack mesh) {
+        if (!CreateSifterCompat.isMesh(mesh)) {
+            return;
+        }
+        boolean brassSifter = CreateSifterCompat.isBrassSifter(module);
+        for (CreateSifterCompat.SiftingRecipeData recipe
+                : CreateSifterCompat.recipes(level)) {
+            if (recipe.waterlogged()
+                    || recipe.requiresAdvancedSifter() && !brassSifter
+                    || !mesh.is(recipe.mesh().getItem())) {
+                continue;
+            }
+            target.add(new Candidate(derivedId(recipe.id(), "sifting"), "sifting",
+                    List.of(new Requirement(recipe.input(), 1, true, 0)),
+                    displayOutputs(recipe.outputs(), false), 0, 1,
+                    1, 20, recipe.duration(),
+                    (recipeLevel, match) -> appendRemainders(
+                            rollOutputs(recipe.outputs(), recipeLevel.random), match)));
+        }
+    }
+
+    private static List<ItemStack> rollOutputs(List<ProcessingOutput> outputs,
+                                               RandomSource random) {
+        List<ItemStack> results = new ArrayList<>();
+        for (ProcessingOutput output : outputs) {
+            ItemStack rolled = output.rollOutput(random);
+            if (!rolled.isEmpty()) {
+                results.add(rolled);
+            }
+        }
+        return List.copyOf(results);
     }
 
     private static void addDynamicProcessing(
@@ -1387,13 +1484,14 @@ public final class SimulationRecipeResolver {
         private final List<ItemStack> itemResults;
         private final List<FluidStack> fluidResults;
         private final Candidate candidate;
-        private final boolean exclusiveMatch;
+        @Nullable
+        private final String rotationGroup;
 
         private ExecutionPlan(ResourceLocation id, int duration, long energyPerTick,
                               List<StackUse> stackUses,
                               List<CatalystUse> catalystUses, List<FluidUse> fluidUses,
                               List<ItemStack> itemResults, List<FluidStack> fluidResults,
-                              Candidate candidate, boolean exclusiveMatch) {
+                              Candidate candidate, @Nullable String rotationGroup) {
             this.id = id;
             this.duration = duration;
             this.energyPerTick = energyPerTick;
@@ -1405,7 +1503,7 @@ public final class SimulationRecipeResolver {
             this.fluidResults = fluidResults.stream().filter(stack -> !stack.isEmpty())
                     .map(FluidStack::copy).toList();
             this.candidate = candidate;
-            this.exclusiveMatch = exclusiveMatch;
+            this.rotationGroup = rotationGroup;
         }
 
         ResourceLocation id() {
@@ -1431,7 +1529,7 @@ public final class SimulationRecipeResolver {
         Optional<ExecutionPlan> repeat(Level level,
                                        List<? extends IInventorySlot> slots,
                                        List<? extends IExtendedFluidTank> fluidTanks) {
-            if (!exclusiveMatch) {
+            if (rotationGroup != null) {
                 return Optional.empty();
             }
             List<ItemStack> inventory = slots.stream().map(IInventorySlot::getStack).toList();
@@ -1445,7 +1543,14 @@ public final class SimulationRecipeResolver {
             CandidateMatch repeated = match(candidate, inventory, fluids,
                     totalItems, totalFluid).orElse(null);
             return repeated == null ? Optional.empty()
-                    : Optional.of(createPlan(level, repeated, true));
+                    : Optional.of(createPlan(level,
+                    new HighestPriorityRoundRobin.Selection<>(repeated, null, 1)));
+        }
+
+        void advanceRoundRobin(RecipeRoundRobinState state) {
+            if (rotationGroup != null) {
+                state.advance(rotationGroup);
+            }
         }
 
         boolean stillValid(List<? extends IInventorySlot> slots,
@@ -1518,8 +1623,12 @@ public final class SimulationRecipeResolver {
                                       FluidPoolKey fluids) {
     }
 
-    private record CachedResolution(@Nullable Candidate candidate, boolean exclusiveMatch) {
-        private static final CachedResolution NO_MATCH = new CachedResolution(null, false);
+    private record CachedResolution(List<Candidate> candidates) {
+        private static final CachedResolution NO_MATCH = new CachedResolution(List.of());
+
+        private CachedResolution {
+            candidates = List.copyOf(candidates);
+        }
     }
 
     private static final class ItemPoolKey {
@@ -2045,14 +2154,13 @@ public final class SimulationRecipeResolver {
     }
 
     private record CandidateMatch(Candidate candidate, Match match, int maximumRuns) {
-        private static final Comparator<CandidateMatch> ORDER = Comparator
+        private static final Comparator<CandidateMatch> PREFERENCE_ORDER = Comparator
                 .comparingInt((CandidateMatch value) -> value.candidate.consumedPerRun())
                 .thenComparingInt(value -> value.candidate.fluidConsumedPerRun())
                 .thenComparingInt(value -> value.candidate.complexity)
                 .thenComparingInt(value -> value.candidate.requirements.size())
                 .thenComparingInt(CandidateMatch::maximumRuns)
-                .thenComparingInt(value -> value.candidate.priority)
-                .thenComparing(value -> value.candidate.id.toString(), Comparator.reverseOrder());
+                .thenComparingInt(value -> value.candidate.priority);
     }
 
     private static final class FlowNetwork {

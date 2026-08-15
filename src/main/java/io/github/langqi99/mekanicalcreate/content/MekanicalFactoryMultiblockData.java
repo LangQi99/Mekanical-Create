@@ -101,6 +101,7 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
     private boolean planDirty = true;
     private long observedRecipeEpoch = SimulationRecipeResolver.cacheEpoch();
     private final RecipeLookupThrottle lookupThrottle = new RecipeLookupThrottle();
+    private final RecipeRoundRobinState fallbackRoundRobinState = new RecipeRoundRobinState();
     private boolean repeatEligible;
     @Nullable
     private ExecutionPlan activePlan;
@@ -259,7 +260,8 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
             repeatPlan = null;
             if (activePlan == null) {
                 activePlan = SimulationRecipeResolver.resolve(level, activeCatalystSlots(),
-                        inputSlots, activeInputFluidTanks(), true).orElse(null);
+                        inputSlots, activeInputFluidTanks(), true,
+                        roundRobinState()).orElse(null);
             }
             planDirty = false;
             lookupThrottle.resolved();
@@ -293,6 +295,7 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
             activePlan.consume(inputSlots, activeInputFluidTanks());
             insertResults(activePlan.itemResults());
             insertFluidResults(activePlan.fluidResults());
+            advanceRoundRobin(activePlan);
             activePlan = null;
             progress = 0;
             duration = DEFAULT_DURATION;
@@ -572,6 +575,36 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
 
     private List<BasicInventorySlot> activeCatalystSlots() {
         return catalystSlots.subList(0, getCatalystSlotCount());
+    }
+
+    private RecipeRoundRobinState roundRobinState() {
+        MekanicalFactoryControllerBlockEntity controller = roundRobinController();
+        return controller == null
+                ? fallbackRoundRobinState : controller.getRecipeRoundRobinState();
+    }
+
+    private void advanceRoundRobin(ExecutionPlan plan) {
+        MekanicalFactoryControllerBlockEntity controller = roundRobinController();
+        RecipeRoundRobinState state = controller == null
+                ? fallbackRoundRobinState : controller.getRecipeRoundRobinState();
+        plan.advanceRoundRobin(state);
+        if (controller != null) {
+            controller.roundRobinChanged();
+        }
+    }
+
+    @Nullable
+    private MekanicalFactoryControllerBlockEntity roundRobinController() {
+        Level level = getLevel();
+        if (level != null) {
+            for (BlockPos location : locations) {
+                if (level.getBlockEntity(location)
+                        instanceof MekanicalFactoryControllerBlockEntity controller) {
+                    return controller;
+                }
+            }
+        }
+        return null;
     }
 
     private static final class DynamicOutputInventorySlot extends BasicInventorySlot {
