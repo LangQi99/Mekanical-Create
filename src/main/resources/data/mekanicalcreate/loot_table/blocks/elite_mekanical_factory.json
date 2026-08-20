@@ -3,7 +3,27 @@
   "pools": [{
     "bonus_rolls": 0.0,
     "conditions": [{ "condition": "minecraft:survives_explosion" }],
-    "entries": [{ "type": "minecraft:item", "name": "mekanicalcreate:elite_mekanical_factory" }],
+    "entries": [{
+      "type": "minecraft:item",
+      "functions": [
+        { "function": "minecraft:copy_name", "source": "block_entity" },
+        {
+          "function": "minecraft:copy_components",
+          "include": [
+            "mekanism:ejector",
+            "mekanism:owner",
+            "mekanism:redstone_control",
+            "mekanism:security",
+            "mekanism:side_config",
+            "mekanism:upgrades",
+            "mekanism:energy",
+            "mekanism:items"
+          ],
+          "source": "block_entity"
+        }
+      ],
+      "name": "mekanicalcreate:elite_mekanical_factory"
+    }],
     "rolls": 1.0
   }],
   "random_sequence": "mekanicalcreate:blocks/elite_mekanical_factory"
