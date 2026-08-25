@@ -98,8 +98,9 @@ public final class MekanicalFactoryValidator extends CuboidStructureValidator<Me
             return FormationResult.fail(Component.translatable(
                     "multiblock.mekanicalcreate.invalid.no_port"));
         }
-        // Core limits are effect caps, not formation limits. Extra cores remain
-        // valid internal blocks and are simply ignored by setUpgradeCoreCounts.
+        // Speed and energy cores have no artificial effect cap; the structure's
+        // interior is their natural limit. Fluid and catalyst cores remain
+        // effect-capped, but extra copies are still valid internal blocks.
         data.setUpgradeCoreCounts(speedCores, energyCores, fluidCores, catalystCores);
         return FormationResult.SUCCESS;
     }

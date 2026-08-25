@@ -36,8 +36,6 @@ import org.jetbrains.annotations.Nullable;
 public final class MekanicalFactoryMultiblockData extends MultiblockData {
     public static final int INPUT_COUNT = 16;
     public static final int OUTPUT_COUNT = 4;
-    public static final int MAX_SPEED_CORES = 4;
-    public static final int MAX_ENERGY_CORES = 4;
     public static final int MAX_FLUID_CORES = 2;
     public static final int MAX_FLUID_TANK_COUNT = 3;
     public static final int MAX_CATALYST_CORES = 3;
@@ -50,6 +48,9 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
     public static final long ENERGY_CAPACITY_PER_CORE = 100_000L;
     public static final long BASE_ENERGY_PER_TICK = 100L;
     private static final int DEFAULT_DURATION = 100;
+    // Far above the 126 operations/tick possible in a valid 7x7x7 structure;
+    // protects the server loop if a third party injects a corrupt core count.
+    private static final int MAX_OVERFLOW_OPERATIONS_PER_TICK = 1_024;
     private static final int HIDDEN_CONTAINER_SLOT_COORDINATE = -10_000;
 
     private final BasicEnergyContainer energyContainer;
@@ -90,6 +91,8 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
     @ContainerSync
     private boolean energyStarved;
     @ContainerSync
+    private boolean parallelProgressPulse;
+    @ContainerSync
     private int speedCoreCount;
     @ContainerSync
     private int energyCoreCount;
@@ -103,8 +106,11 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
     private final RecipeLookupThrottle lookupThrottle = new RecipeLookupThrottle();
     private final RecipeRoundRobinState fallbackRoundRobinState = new RecipeRoundRobinState();
     private boolean repeatEligible;
+    private long overflowWorkRemainder;
     @Nullable
     private ExecutionPlan activePlan;
+    @Nullable
+    private ExecutionPlan fanCompletionPlan;
     @Nullable
     private ExecutionPlan repeatPlan;
 
@@ -234,7 +240,9 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
         }
 
         if (activePlan != null && planDirty) {
-            if (!activePlan.stillValid(inputSlots, activeInputFluidTanks())) {
+            ExecutionPlan validationPlan = fanCompletionPlan != null
+                    ? fanCompletionPlan : activePlan;
+            if (!validationPlan.stillValid(inputSlots, activeInputFluidTanks())) {
                 invalidatePlan();
             } else {
                 planDirty = false;
@@ -268,16 +276,44 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
             if (activePlan == null) {
                 return setIdle(needsPacket);
             }
+            fanCompletionPlan = null;
             progress = 0;
             duration = getAdjustedDuration(activePlan.duration());
         }
-        if (!canFit(activePlan.itemResults(), activePlan.fluidResults())) {
-            return setInactive(needsPacket, false);
+        if (overflowWorkRemainder > 0
+                || FactorySpeedSchedule.overflowsIntoParallelism(
+                activePlan.duration(), speedCoreCount)) {
+            return tickOverflowingPlan(level, needsPacket);
         }
+        if (parallelProgressPulse) {
+            parallelProgressPulse = false;
+            needsPacket = true;
+        }
+        overflowWorkRemainder = 0;
         long energyPerTick = getEnergyPerTick();
         if (energyContainer.extract(energyPerTick, Action.SIMULATE,
                 AutomationType.INTERNAL) != energyPerTick) {
             return setInactive(needsPacket, true);
+        }
+        boolean finishing = progress + 1 >= duration;
+        ExecutionPlan executionPlan = fanCompletionPlan != null
+                ? fanCompletionPlan : activePlan;
+        if (FanProcessingPolicy.shouldSnapshotAtCompletion(
+                activePlan.isFanProcessing(), finishing,
+                fanCompletionPlan != null)) {
+            executionPlan = SimulationRecipeResolver.resolveFanCompletion(
+                    level, activeCatalystSlots(), inputSlots, true,
+                    roundRobinState()).orElse(null);
+            if (executionPlan == null) {
+                invalidatePlan();
+                return setInactive(true, false);
+            }
+            // Snapshot exactly once at the end of the bar. Output blockage
+            // must not reroll probability results or absorb later inputs.
+            fanCompletionPlan = executionPlan;
+        }
+        if (!canFit(executionPlan.itemResults(), executionPlan.fluidResults())) {
+            return setInactive(needsPacket, false);
         }
 
         energyContainer.extract(energyPerTick, Action.EXECUTE, AutomationType.INTERNAL);
@@ -286,17 +322,18 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
         energyStarved = false;
         progress++;
         if (progress >= duration) {
-            if (!activePlan.stillValid(inputSlots, activeInputFluidTanks())
-                    || !canFit(activePlan.itemResults(), activePlan.fluidResults())) {
+            if (!executionPlan.stillValid(inputSlots, activeInputFluidTanks())
+                    || !canFit(executionPlan.itemResults(), executionPlan.fluidResults())) {
                 invalidatePlan();
                 return setInactive(true, false);
             }
-            ExecutionPlan completedPlan = activePlan;
-            activePlan.consume(inputSlots, activeInputFluidTanks());
-            insertResults(activePlan.itemResults());
-            insertFluidResults(activePlan.fluidResults());
-            advanceRoundRobin(activePlan);
+            ExecutionPlan completedPlan = executionPlan;
+            completedPlan.consume(inputSlots, activeInputFluidTanks());
+            insertResults(completedPlan.itemResults());
+            insertFluidResults(completedPlan.fluidResults());
+            advanceRoundRobin(completedPlan);
             activePlan = null;
+            fanCompletionPlan = null;
             progress = 0;
             duration = DEFAULT_DURATION;
             planDirty = true;
@@ -309,21 +346,152 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
         return needsPacket;
     }
 
+    /**
+     * Once speed cores reduce a recipe below one game tick, execute the excess
+     * work as whole, independently validated operations. The fixed-point
+     * remainder preserves fractional rates without ever accumulating blocked
+     * whole operations into a later burst.
+     */
+    private boolean tickOverflowingPlan(Level level, boolean needsPacket) {
+        long availableWork = FactorySpeedSchedule.availableWork(
+                speedCoreCount, overflowWorkRemainder);
+        overflowWorkRemainder = 0;
+
+        boolean completedAny = false;
+        boolean starved = false;
+        int operations = 0;
+        while (operations < MAX_OVERFLOW_OPERATIONS_PER_TICK) {
+            ExecutionPlan timingPlan = activePlan;
+            if (timingPlan == null) {
+                // There is no operation to receive the remaining work. Do not
+                // bank it for material inserted in a later tick.
+                availableWork = 0;
+                break;
+            }
+            long operationWork = FactorySpeedSchedule.workPerOperation(timingPlan.duration());
+            if (availableWork < operationWork) {
+                // This is genuine fractional progress toward the already
+                // selected next operation, including when a round-robin peer
+                // has a different recipe duration.
+                overflowWorkRemainder = availableWork;
+                break;
+            }
+            long operationEnergy = FactorySpeedSchedule.operationEnergy(
+                    timingPlan.energyPerTick(), timingPlan.duration());
+            if (energyContainer.extract(operationEnergy, Action.SIMULATE,
+                    AutomationType.INTERNAL) != operationEnergy) {
+                starved = true;
+                overflowWorkRemainder = availableWork % operationWork;
+                break;
+            }
+            ExecutionPlan plan = fanCompletionPlan != null
+                    ? fanCompletionPlan : timingPlan;
+            if (FanProcessingPolicy.shouldSnapshotAtCompletion(
+                    timingPlan.isFanProcessing(), true,
+                    fanCompletionPlan != null)) {
+                plan = SimulationRecipeResolver.resolveFanCompletion(
+                        level, activeCatalystSlots(), inputSlots, true,
+                        roundRobinState()).orElse(null);
+                if (plan == null) {
+                    invalidatePlan();
+                    availableWork = 0;
+                    break;
+                }
+                fanCompletionPlan = plan;
+            }
+            if (!plan.stillValid(inputSlots, activeInputFluidTanks())) {
+                invalidatePlan();
+                availableWork = 0;
+                break;
+            }
+            if (!canFit(plan.itemResults(), plan.fluidResults())) {
+                // Preserve only sub-operation work. Whole blocked operations
+                // are deliberately discarded so unblocking cannot cause a
+                // delayed burst.
+                overflowWorkRemainder = availableWork % operationWork;
+                break;
+            }
+
+            energyContainer.extract(operationEnergy, Action.EXECUTE,
+                    AutomationType.INTERNAL);
+            plan.consume(inputSlots, activeInputFluidTanks());
+            insertResults(plan.itemResults());
+            insertFluidResults(plan.fluidResults());
+            advanceRoundRobin(plan);
+            completedAny = true;
+            operations++;
+            availableWork -= operationWork;
+            fanCompletionPlan = null;
+
+            ExecutionPlan nextPlan = plan.repeat(level, inputSlots,
+                    activeInputFluidTanks()).orElse(null);
+            if (nextPlan == null) {
+                nextPlan = SimulationRecipeResolver.resolve(level, activeCatalystSlots(),
+                        inputSlots, activeInputFluidTanks(), true,
+                        roundRobinState()).orElse(null);
+            }
+            activePlan = nextPlan;
+            progress = 0;
+            planDirty = nextPlan == null;
+            repeatPlan = nextPlan == null ? plan : null;
+            repeatEligible = nextPlan == null;
+            duration = nextPlan == null
+                    ? DEFAULT_DURATION : getAdjustedDuration(nextPlan.duration());
+            // Internal consumption notifies the input listener. The plan above
+            // was resolved from the resulting inventory, so it is already clean.
+            lookupThrottle.clear();
+            if (nextPlan != null) {
+                planDirty = false;
+            }
+            if (nextPlan == null) {
+                availableWork = 0;
+                break;
+            }
+        }
+
+        if (operations >= MAX_OVERFLOW_OPERATIONS_PER_TICK && activePlan != null) {
+            // Corrupt third-party core counts must not turn unused whole work
+            // into an ever-growing burst on the following tick.
+            overflowWorkRemainder = availableWork
+                    % FactorySpeedSchedule.workPerOperation(activePlan.duration());
+        }
+
+        if (completedAny) {
+            markDirty();
+            needsPacket = true;
+        }
+        if (parallelProgressPulse != completedAny) {
+            parallelProgressPulse = completedAny;
+            needsPacket = true;
+        }
+        boolean nowActive = completedAny;
+        if (active != nowActive || energyStarved != starved) {
+            needsPacket = true;
+        }
+        active = nowActive;
+        energyStarved = starved;
+        return needsPacket;
+    }
+
     private boolean setIdle(boolean needsPacket) {
-        if (progress != 0 || duration != DEFAULT_DURATION || active || energyStarved) {
+        if (progress != 0 || duration != DEFAULT_DURATION || active || energyStarved
+                || parallelProgressPulse) {
             progress = 0;
             duration = DEFAULT_DURATION;
             active = false;
             energyStarved = false;
+            parallelProgressPulse = false;
+            overflowWorkRemainder = 0;
             return true;
         }
         return needsPacket;
     }
 
     private boolean setInactive(boolean needsPacket, boolean starved) {
-        if (active || energyStarved != starved) {
+        if (active || energyStarved != starved || parallelProgressPulse) {
             active = false;
             energyStarved = starved;
+            parallelProgressPulse = false;
             return true;
         }
         return needsPacket;
@@ -331,11 +499,14 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
 
     private void invalidatePlan() {
         activePlan = null;
+        fanCompletionPlan = null;
         repeatPlan = null;
         repeatEligible = false;
         planDirty = true;
         progress = 0;
         duration = DEFAULT_DURATION;
+        parallelProgressPulse = false;
+        overflowWorkRemainder = 0;
     }
 
     private void onInputsChanged() {
@@ -433,8 +604,7 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
         long base = activePlan == null
                 ? BASE_ENERGY_PER_TICK
                 : activePlan.energyPerTick();
-        return Math.max(1L, (long) Math.ceil(
-                base * (4D + getSpeedCoreCount()) / 4D));
+        return FactorySpeedSchedule.scaledEnergyPerTick(base, getSpeedCoreCount());
     }
 
     public List<InputInventorySlot> getInputSlots() {
@@ -491,12 +661,12 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
 
     public int getSpeedCoreCount() {
         return getClientStructureCoreCount(ModBlocks.MEKANICAL_FACTORY_SPEED_CORE.get(),
-                speedCoreCount, MAX_SPEED_CORES);
+                speedCoreCount, Integer.MAX_VALUE);
     }
 
     public int getEnergyCoreCount() {
         return getClientStructureCoreCount(ModBlocks.MEKANICAL_FACTORY_ENERGY_CORE.get(),
-                energyCoreCount, MAX_ENERGY_CORES);
+                energyCoreCount, Integer.MAX_VALUE);
     }
 
     public int getFluidCoreCount() {
@@ -543,14 +713,18 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
 
     void setUpgradeCoreCounts(int speedCores, int energyCores, int fluidCores,
                               int catalystCores) {
-        speedCoreCount = Math.min(MAX_SPEED_CORES, Math.max(0, speedCores));
-        energyCoreCount = Math.min(MAX_ENERGY_CORES, Math.max(0, energyCores));
+        int newSpeedCoreCount = Math.max(0, speedCores);
+        if (speedCoreCount != newSpeedCoreCount) {
+            overflowWorkRemainder = 0;
+        }
+        speedCoreCount = newSpeedCoreCount;
+        energyCoreCount = Math.max(0, energyCores);
         fluidCoreCount = Math.min(MAX_FLUID_CORES, Math.max(0, fluidCores));
         catalystCoreCount = Math.min(MAX_CATALYST_CORES, Math.max(0, catalystCores));
     }
 
     public double getScaledProgress() {
-        return duration <= 0 ? 0 : progress / (double) duration;
+        return parallelProgressPulse ? 1 : duration <= 0 ? 0 : progress / (double) duration;
     }
 
     public boolean isActive() {
@@ -562,7 +736,7 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
     }
 
     private int getAdjustedDuration(int recipeDuration) {
-        return Math.max(1, (int) Math.ceil(recipeDuration * 4D / (4D + speedCoreCount)));
+        return FactorySpeedSchedule.adjustedDuration(recipeDuration, speedCoreCount);
     }
 
     private List<IExtendedFluidTank> activeInputFluidTanks() {

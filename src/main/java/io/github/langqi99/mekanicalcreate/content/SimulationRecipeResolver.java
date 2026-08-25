@@ -5,8 +5,6 @@ import com.simibubi.create.AllRecipeTypes;
 import com.simibubi.create.content.kinetics.crusher.CrushingRecipe;
 import com.simibubi.create.content.kinetics.deployer.DeployerApplicationRecipe;
 import com.simibubi.create.content.kinetics.deployer.ManualApplicationRecipe;
-import com.simibubi.create.content.kinetics.fan.processing.AllFanProcessingTypes;
-import com.simibubi.create.content.kinetics.fan.processing.FanProcessingType;
 import com.simibubi.create.content.kinetics.fan.processing.HauntingRecipe;
 import com.simibubi.create.content.kinetics.fan.processing.SplashingRecipe;
 import com.simibubi.create.content.kinetics.millstone.MillingRecipe;
@@ -20,6 +18,7 @@ import com.simibubi.create.content.processing.recipe.ProcessingOutput;
 import com.simibubi.create.content.processing.recipe.ProcessingRecipe;
 import com.simibubi.create.content.processing.sequenced.SequencedAssemblyRecipe;
 import com.simibubi.create.content.processing.sequenced.SequencedRecipe;
+import com.simibubi.create.foundation.recipe.RecipeApplier;
 import io.github.langqi99.mekanicalcreate.MekanicalCreate;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -59,6 +58,7 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.ShapedRecipe;
+import net.minecraft.world.item.crafting.SingleRecipeInput;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.material.Fluid;
 import org.jetbrains.annotations.Nullable;
@@ -68,9 +68,9 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.crafting.SizedFluidIngredient;
 
 /**
- * Resolves the unordered item pool into one deterministic operation. Inventory
- * size affects conflict resolution, but an execution plan always consumes one
- * recipe's worth of materials.
+ * Resolves the unordered item pool into one deterministic operation. Ordinary
+ * modules consume one recipe's worth of materials per plan; an encased fan
+ * snapshots every currently processable stack into one Create-style batch.
  */
 public final class SimulationRecipeResolver {
     private static final int DEFAULT_DURATION = 100;
@@ -173,6 +173,11 @@ public final class SimulationRecipeResolver {
             return Optional.empty();
         }
         List<ItemStack> inventory = inputSlots.stream().map(IInventorySlot::getStack).toList();
+        if (module.is(AllBlocks.ENCASED_FAN.asItem())) {
+            return FanProcessingPolicy.modeFor(condition)
+                    .flatMap(mode -> resolveFanBatch(level, inventory, mode,
+                            allowFluidProcessing, roundRobinState));
+        }
         List<Candidate> candidates = new ArrayList<>(candidateCatalog(
                 level, module, condition, allowFluidProcessing).candidatesFor(inventory));
         addNativeItemChargingCandidates(candidates, level, module,
@@ -182,6 +187,25 @@ public final class SimulationRecipeResolver {
         return resolve(level, inputSlots, inputFluidTanks, inventory, candidates,
                 new ResolverContext(ItemPoolKey.create(contextStacks), allowFluidProcessing),
                 roundRobinState);
+    }
+
+    /**
+     * Takes the fan batch snapshot used when an already-running progress cycle
+     * reaches its end. This deliberately cannot fall through to another module.
+     */
+    static Optional<ExecutionPlan> resolveFanCompletion(
+            Level level, ItemStack module, ItemStack condition,
+            List<? extends IInventorySlot> inputSlots,
+            boolean allowFluidProcessing,
+            RecipeRoundRobinState roundRobinState) {
+        if (!module.is(AllBlocks.ENCASED_FAN.asItem())) {
+            return Optional.empty();
+        }
+        List<ItemStack> inventory = inputSlots.stream()
+                .map(IInventorySlot::getStack).toList();
+        return FanProcessingPolicy.modeFor(condition)
+                .flatMap(mode -> resolveFanBatch(level, inventory, mode,
+                        allowFluidProcessing, roundRobinState));
     }
 
     /**
@@ -202,14 +226,30 @@ public final class SimulationRecipeResolver {
         List<ItemStack> conditions = catalysts.stream()
                 .filter(SimulationRecipeResolver::isSupportedCondition)
                 .toList();
+        Optional<FanProcessingPolicy.Mode> fanMode = catalysts.stream()
+                .anyMatch(stack -> stack.is(AllBlocks.ENCASED_FAN.asItem()))
+                ? FanProcessingPolicy.highestPriorityMode(conditions) : Optional.empty();
         List<Candidate> candidates = new ArrayList<>();
         List<ItemStack> inventory = inputSlots.stream().map(IInventorySlot::getStack).toList();
+        if (fanMode.isPresent()) {
+            Optional<ExecutionPlan> fanBatch = resolveFanBatch(level, inventory,
+                    fanMode.orElseThrow(), allowFluidProcessing, roundRobinState);
+            if (fanBatch.isPresent()) {
+                return fanBatch;
+            }
+        }
         for (ItemStack module : catalysts) {
             if (!isSupportedModule(level, module, allowFluidProcessing)) {
                 continue;
             }
             if (module.is(AllBlocks.ENCASED_FAN.asItem())
                     || CreateSifterCompat.isSifterModule(module)) {
+                if (module.is(AllBlocks.ENCASED_FAN.asItem())) {
+                    // Fan operations are represented only by the atomic batch
+                    // above. Falling through to individual candidates would
+                    // consume a single item and violate Create's stack behavior.
+                    continue;
+                }
                 for (ItemStack condition : conditions) {
                     if (!isCompatibleCondition(module, condition)) {
                         continue;
@@ -227,6 +267,30 @@ public final class SimulationRecipeResolver {
         return resolve(level, inputSlots, inputFluidTanks, inventory, candidates,
                 new ResolverContext(ItemPoolKey.create(catalysts), allowFluidProcessing),
                 roundRobinState);
+    }
+
+    /** Multiblock counterpart of {@link #resolveFanCompletion}. */
+    static Optional<ExecutionPlan> resolveFanCompletion(
+            Level level, List<? extends IInventorySlot> catalystSlots,
+            List<? extends IInventorySlot> inputSlots,
+            boolean allowFluidProcessing,
+            RecipeRoundRobinState roundRobinState) {
+        List<ItemStack> catalysts = distinctStacks(catalystSlots.stream()
+                .map(IInventorySlot::getStack)
+                .filter(stack -> !stack.isEmpty())
+                .toList());
+        if (catalysts.stream().noneMatch(
+                stack -> stack.is(AllBlocks.ENCASED_FAN.asItem()))) {
+            return Optional.empty();
+        }
+        List<ItemStack> conditions = catalysts.stream()
+                .filter(SimulationRecipeResolver::isSupportedCondition)
+                .toList();
+        List<ItemStack> inventory = inputSlots.stream()
+                .map(IInventorySlot::getStack).toList();
+        return FanProcessingPolicy.highestPriorityMode(conditions)
+                .flatMap(mode -> resolveFanBatch(level, inventory, mode,
+                        allowFluidProcessing, roundRobinState));
     }
 
     private static Optional<ExecutionPlan> resolve(Level level,
@@ -340,6 +404,145 @@ public final class SimulationRecipeResolver {
                 selected.candidate, selection.group());
     }
 
+    /**
+     * Builds one immutable fan operation from the first four currently
+     * processable input stacks. Candidate discovery is still performed once
+     * through the cached catalog; only the cheap exact result roll is repeated
+     * per processed item.
+     */
+    private static Optional<ExecutionPlan> resolveFanBatch(
+            Level level, List<ItemStack> inventory, FanProcessingPolicy.Mode mode,
+            boolean allowFluidProcessing, RecipeRoundRobinState roundRobinState) {
+        List<Candidate> candidates = candidateCatalog(level, AllBlocks.ENCASED_FAN.asStack(),
+                mode.conditionStack(), allowFluidProcessing).candidatesFor(inventory).stream()
+                .filter(Candidate::isFanProcessing)
+                .toList();
+        if (candidates.isEmpty()) {
+            return Optional.empty();
+        }
+
+        List<StackUse> stackUses = new ArrayList<>();
+        List<ItemStack> itemResults = new ArrayList<>();
+        List<String> rotationGroups = new ArrayList<>();
+        Map<String, Integer> plannedAdvances = new HashMap<>();
+        Candidate representative = null;
+        int duration = 1;
+        long energyPerTick = 1;
+        int acceptedGroups = 0;
+
+        for (int slot = 0; slot < inventory.size(); slot++) {
+            if (!FanProcessingPolicy.canAcceptOutputGroup(acceptedGroups)) {
+                break;
+            }
+            ItemStack input = inventory.get(slot);
+            if (input.isEmpty()) {
+                continue;
+            }
+            List<CandidateMatch> matches = new ArrayList<>();
+            for (Candidate candidate : candidates) {
+                if (candidate.requirements.size() != 1
+                        || !candidate.requirements.getFirst().consumed
+                        || candidate.requirements.getFirst().count != 1
+                        || !candidate.requirements.getFirst().test(input)) {
+                    continue;
+                }
+                Match unit = fanUnitMatch(candidate, slot, input);
+                matches.add(new CandidateMatch(candidate, unit, input.getCount()));
+            }
+            if (matches.isEmpty()) {
+                continue;
+            }
+
+            // Create suppresses bulk blasting when the equivalent smoking
+            // recipe produces the same result (most notably food). Filter
+            // every candidate before choosing a round-robin winner: checking
+            // only the current winner can permanently strand the cursor on a
+            // suppressed recipe, while leaving it in the tied set can execute
+            // it on a later item in this same batch.
+            matches.removeIf(match -> isSuppressedBulkBlastingRecipe(
+                    level, mode, input, match.candidate));
+            if (matches.isEmpty()) {
+                continue;
+            }
+            acceptedGroups++;
+
+            HighestPriorityRoundRobin.Selection<CandidateMatch> selection =
+                    selectMatch(matches, roundRobinState);
+            List<CandidateMatch> tied = matches.stream()
+                    .filter(match -> CandidateMatch.PREFERENCE_ORDER.compare(
+                            match, selection.value()) == 0)
+                    .sorted(Comparator.comparing(match -> match.candidate.id.toString()))
+                    .toList();
+            String rotationGroup = selection.group();
+            int alreadyPlanned = rotationGroup == null ? 0
+                    : plannedAdvances.getOrDefault(rotationGroup, 0);
+
+            stackUses.add(new StackUse(slot, input.getCount(), input.copyWithCount(1)));
+            duration = Math.max(duration,
+                    FanProcessingPolicy.batchDuration(input.getCount()));
+            for (int operation = 0; operation < input.getCount(); operation++) {
+                Candidate selectedCandidate;
+                if (rotationGroup == null) {
+                    selectedCandidate = selection.value().candidate;
+                } else {
+                    int index = FanProcessingPolicy.rotationIndex(
+                            roundRobinState.cursor(rotationGroup), alreadyPlanned + operation,
+                            tied.size());
+                    selectedCandidate = tied.get(index).candidate;
+                    rotationGroups.add(rotationGroup);
+                }
+                Match unit = fanUnitMatch(selectedCandidate, slot, input);
+                for (ItemStack result : selectedCandidate.resultFactory.apply(level, unit)) {
+                    if (!result.isEmpty()) {
+                        addStacked(itemResults, result.copy());
+                    }
+                }
+                if (representative == null) {
+                    representative = selectedCandidate;
+                }
+                energyPerTick = Math.max(energyPerTick, selectedCandidate.energyPerTick);
+            }
+            if (rotationGroup != null) {
+                plannedAdvances.merge(rotationGroup, input.getCount(), Integer::sum);
+            }
+        }
+
+        if (representative == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new ExecutionPlan(representative.id, duration, energyPerTick,
+                stackUses, List.of(), List.of(), itemResults, List.of(), representative,
+                rotationGroups));
+    }
+
+    private static Match fanUnitMatch(Candidate candidate, int slot, ItemStack input) {
+        Match match = new Match(List.of(new StackUse(slot, 1, input.copyWithCount(1))),
+                List.of(), List.of(input.copyWithCount(1)));
+        match.candidate = candidate;
+        return match;
+    }
+
+    /**
+     * Create deliberately refuses bulk blasting when the matching smoking
+     * recipe has the same result (notably food). We keep the item untouched
+     * instead of following the entity fan's destructive empty-result path.
+     */
+    private static boolean isSuppressedBulkBlastingRecipe(
+            Level level, FanProcessingPolicy.Mode mode, ItemStack input, Candidate candidate) {
+        if (mode != FanProcessingPolicy.Mode.BLASTING || candidate.displayOutputs.isEmpty()) {
+            return false;
+        }
+        return level.getRecipeManager().getRecipeFor(RecipeType.SMOKING,
+                        new SingleRecipeInput(input.copyWithCount(1)), level)
+                .filter(AllRecipeTypes.CAN_BE_AUTOMATED)
+                .map(RecipeHolder::value)
+                .map(recipe -> recipe.getResultItem(level.registryAccess()))
+                .filter(result -> !result.isEmpty())
+                .map(result -> ItemStack.isSameItem(result,
+                        candidate.displayOutputs.getFirst().stack))
+                .orElse(false);
+    }
+
     private static boolean canPossiblyMatch(Candidate candidate, List<ItemStack> inventory,
                                             List<FluidStack> fluids, int totalItems,
                                             int totalFluid) {
@@ -408,16 +611,13 @@ public final class SimulationRecipeResolver {
     }
 
     static boolean isSupportedCondition(ItemStack stack) {
-        return stack.is(Items.LAVA_BUCKET)
-                || stack.is(Items.WATER_BUCKET)
-                || stack.is(Items.SOUL_CAMPFIRE)
-                || stack.is(Items.CAMPFIRE)
+        return FanProcessingPolicy.isSupportedCondition(stack)
                 || CreateSifterCompat.isMesh(stack);
     }
 
     static boolean isCompatibleCondition(ItemStack module, ItemStack condition) {
         if (module.is(AllBlocks.ENCASED_FAN.asItem())) {
-            return !CreateSifterCompat.isMesh(condition);
+            return FanProcessingPolicy.isSupportedCondition(condition);
         }
         if (CreateSifterCompat.isSifterModule(module)) {
             return CreateSifterCompat.isMesh(condition);
@@ -1019,59 +1219,69 @@ public final class SimulationRecipeResolver {
     }
 
     private static void addFan(List<Candidate> target, RecipeManager manager, ItemStack condition) {
-        if (condition.is(Items.WATER_BUCKET)) {
-            RecipeType<SplashingRecipe> type = AllRecipeTypes.SPLASHING.getType();
-            addFanProcessing(target, manager.getAllRecipesFor(type),
-                    "fan_washing", AllFanProcessingTypes.SPLASHING);
-        } else if (condition.is(Items.SOUL_CAMPFIRE)) {
-            RecipeType<HauntingRecipe> type = AllRecipeTypes.HAUNTING.getType();
-            addFanProcessing(target, manager.getAllRecipesFor(type),
-                    "fan_haunting", AllFanProcessingTypes.HAUNTING);
-        } else if (condition.is(Items.CAMPFIRE)) {
-            addFanCooking(target, manager.getAllRecipesFor(net.minecraft.world.item.crafting.RecipeType.SMOKING),
-                    "fan_smoking", AllFanProcessingTypes.SMOKING, 20);
-        } else if (condition.is(Items.LAVA_BUCKET)) {
-            addFanCooking(target, manager.getAllRecipesFor(net.minecraft.world.item.crafting.RecipeType.SMELTING),
-                    "fan_blasting", AllFanProcessingTypes.BLASTING, 30);
-            addFanCooking(target, manager.getAllRecipesFor(net.minecraft.world.item.crafting.RecipeType.BLASTING),
-                    "fan_blasting", AllFanProcessingTypes.BLASTING, 20);
-        }
+        FanProcessingPolicy.modeFor(condition).ifPresent(mode -> {
+            switch (mode) {
+                case SPLASHING -> {
+                    RecipeType<SplashingRecipe> type = AllRecipeTypes.SPLASHING.getType();
+                    addFanProcessing(target, manager.getAllRecipesFor(type), mode,
+                            "fan_washing", 20);
+                }
+                case HAUNTING -> {
+                    RecipeType<HauntingRecipe> type = AllRecipeTypes.HAUNTING.getType();
+                    addFanProcessing(target, manager.getAllRecipesFor(type), mode,
+                            "fan_haunting", 20);
+                }
+                case SMOKING -> addFanCooking(target,
+                        manager.getAllRecipesFor(RecipeType.SMOKING), mode,
+                        "fan_smoking", 20);
+                case BLASTING -> {
+                    addFanCooking(target, manager.getAllRecipesFor(RecipeType.SMELTING), mode,
+                            "fan_blasting", 30);
+                    addFanCooking(target, manager.getAllRecipesFor(RecipeType.BLASTING), mode,
+                            "fan_blasting", 20);
+                }
+            }
+        });
     }
 
     private static <R extends ProcessingRecipe<?, ?>> void addFanProcessing(
-            List<Candidate> target, List<RecipeHolder<R>> recipes, String suffix, FanProcessingType type) {
+            List<Candidate> target, List<RecipeHolder<R>> recipes,
+            FanProcessingPolicy.Mode mode, String suffix, int priority) {
         for (RecipeHolder<R> holder : recipes) {
-            if (!AllRecipeTypes.CAN_BE_AUTOMATED.test(holder) || holder.value().getIngredients().isEmpty()) {
+            if (!mode.allows(holder.value().getType())
+                    || !AllRecipeTypes.CAN_BE_AUTOMATED.test(holder)
+                    || holder.value().getIngredients().isEmpty()) {
                 continue;
             }
             target.add(new Candidate(derivedId(holder.id(), suffix), suffix,
                     List.of(new Requirement(holder.value().getIngredients().getFirst(), 1, true, 0)),
                     displayOutputs(holder.value().getRollableResults(), false), 0, 1,
-                    1, 20, DEFAULT_DURATION,
-                    (level, match) -> fanResults(type, level, match)));
+                    1, priority, FanProcessingPolicy.batchDuration(1),
+                    (level, match) -> fanResults(holder.value(), level, match)));
         }
     }
 
     private static <R extends AbstractCookingRecipe> void addFanCooking(
-            List<Candidate> target, List<RecipeHolder<R>> recipes, String suffix,
-            FanProcessingType type, int priority) {
+            List<Candidate> target, List<RecipeHolder<R>> recipes,
+            FanProcessingPolicy.Mode mode, String suffix, int priority) {
         for (RecipeHolder<R> holder : recipes) {
-            if (!AllRecipeTypes.CAN_BE_AUTOMATED.test(holder) || holder.value().getIngredients().isEmpty()) {
+            if (!mode.allows(holder.value().getType())
+                    || !AllRecipeTypes.CAN_BE_AUTOMATED.test(holder)
+                    || holder.value().getIngredients().isEmpty()) {
                 continue;
             }
             ItemStack output = holder.value().getResultItem(net.minecraft.core.RegistryAccess.EMPTY);
             target.add(new Candidate(derivedId(holder.id(), suffix), suffix,
                     List.of(new Requirement(holder.value().getIngredients().getFirst(), 1, true, 0)),
                     output.isEmpty() ? List.of() : List.of(new DisplayOutput(output, 1)), 0, 1,
-                    1, priority, DEFAULT_DURATION,
-                    (level, match) -> fanResults(type, level, match)));
+                    1, priority, FanProcessingPolicy.batchDuration(1),
+                    (level, match) -> fanResults(holder.value(), level, match)));
         }
     }
 
-    private static List<ItemStack> fanResults(FanProcessingType type, Level level, Match match) {
+    private static List<ItemStack> fanResults(Recipe<?> recipe, Level level, Match match) {
         ItemStack input = match.firstAssignedStack();
-        List<ItemStack> results = type.process(input.copyWithCount(1), level);
-        return results == null ? List.of() : appendRemainders(results, match);
+        return RecipeApplier.applyRecipeOn(level, input.copy(), recipe, false);
     }
 
     private static <R extends CraftingRecipe> void addCrafting(
@@ -1484,14 +1694,34 @@ public final class SimulationRecipeResolver {
         private final List<ItemStack> itemResults;
         private final List<FluidStack> fluidResults;
         private final Candidate candidate;
-        @Nullable
-        private final String rotationGroup;
+        private final List<String> rotationGroups;
+        private final boolean repeatable;
 
         private ExecutionPlan(ResourceLocation id, int duration, long energyPerTick,
                               List<StackUse> stackUses,
                               List<CatalystUse> catalystUses, List<FluidUse> fluidUses,
                               List<ItemStack> itemResults, List<FluidStack> fluidResults,
                               Candidate candidate, @Nullable String rotationGroup) {
+            this(id, duration, energyPerTick, stackUses, catalystUses, fluidUses,
+                    itemResults, fluidResults, candidate,
+                    rotationGroup == null ? List.of() : List.of(rotationGroup), true);
+        }
+
+        private ExecutionPlan(ResourceLocation id, int duration, long energyPerTick,
+                              List<StackUse> stackUses,
+                              List<CatalystUse> catalystUses, List<FluidUse> fluidUses,
+                              List<ItemStack> itemResults, List<FluidStack> fluidResults,
+                              Candidate candidate, List<String> rotationGroups) {
+            this(id, duration, energyPerTick, stackUses, catalystUses, fluidUses,
+                    itemResults, fluidResults, candidate, rotationGroups, false);
+        }
+
+        private ExecutionPlan(ResourceLocation id, int duration, long energyPerTick,
+                              List<StackUse> stackUses,
+                              List<CatalystUse> catalystUses, List<FluidUse> fluidUses,
+                              List<ItemStack> itemResults, List<FluidStack> fluidResults,
+                              Candidate candidate, List<String> rotationGroups,
+                              boolean repeatable) {
             this.id = id;
             this.duration = duration;
             this.energyPerTick = energyPerTick;
@@ -1503,7 +1733,8 @@ public final class SimulationRecipeResolver {
             this.fluidResults = fluidResults.stream().filter(stack -> !stack.isEmpty())
                     .map(FluidStack::copy).toList();
             this.candidate = candidate;
-            this.rotationGroup = rotationGroup;
+            this.rotationGroups = List.copyOf(rotationGroups);
+            this.repeatable = repeatable;
         }
 
         ResourceLocation id() {
@@ -1529,7 +1760,7 @@ public final class SimulationRecipeResolver {
         Optional<ExecutionPlan> repeat(Level level,
                                        List<? extends IInventorySlot> slots,
                                        List<? extends IExtendedFluidTank> fluidTanks) {
-            if (rotationGroup != null) {
+            if (!repeatable || !rotationGroups.isEmpty()) {
                 return Optional.empty();
             }
             List<ItemStack> inventory = slots.stream().map(IInventorySlot::getStack).toList();
@@ -1548,7 +1779,7 @@ public final class SimulationRecipeResolver {
         }
 
         void advanceRoundRobin(RecipeRoundRobinState state) {
-            if (rotationGroup != null) {
+            for (String rotationGroup : rotationGroups) {
                 state.advance(rotationGroup);
             }
         }
@@ -1576,6 +1807,10 @@ public final class SimulationRecipeResolver {
                 }
             }
             return true;
+        }
+
+        boolean isFanProcessing() {
+            return candidate.isFanProcessing();
         }
 
         void consume(List<? extends IInventorySlot> slots,
@@ -1951,6 +2186,10 @@ public final class SimulationRecipeResolver {
 
         List<FluidStack> displayFluidOutputs() {
             return fluidOutputs;
+        }
+
+        boolean isFanProcessing() {
+            return process.startsWith("fan_");
         }
     }
 
