@@ -188,7 +188,7 @@ public final class MekanicalFactoryPonderScene {
         scene.overlay().showText(50)
                 .attachKeyFrame()
                 .colored(PonderPalette.FAST)
-                .text("Only the first 4 Speed Cores take effect")
+                .text("Every Speed Core increases processing speed; excess speed becomes parallel operations")
                 .placeNearTarget()
                 .pointAt(util.vector().centerOf(3, 3, 3));
         scene.idle(58);
@@ -201,7 +201,7 @@ public final class MekanicalFactoryPonderScene {
         scene.overlay().showText(50)
                 .attachKeyFrame()
                 .colored(PonderPalette.BLUE)
-                .text("Only the first 4 Energy Cores take effect")
+                .text("Every Energy Core adds 100 kFE of storage")
                 .placeNearTarget()
                 .pointAt(util.vector().centerOf(4, 3, 3));
         scene.idle(58);

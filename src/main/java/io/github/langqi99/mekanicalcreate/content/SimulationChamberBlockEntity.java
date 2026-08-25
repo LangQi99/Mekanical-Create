@@ -9,6 +9,7 @@ import mekanism.api.Action;
 import mekanism.api.AutomationType;
 import mekanism.api.IContentsListener;
 import mekanism.api.RelativeSide;
+import mekanism.api.Upgrade;
 import mekanism.api.energy.IEnergyContainer;
 import mekanism.api.inventory.IInventorySlot;
 import mekanism.api.math.FloatingLong;
@@ -23,6 +24,8 @@ import mekanism.common.capabilities.holder.slot.InventorySlotHelper;
 import mekanism.common.inventory.container.MekanismContainer;
 import mekanism.common.inventory.container.slot.ContainerSlotType;
 import mekanism.common.inventory.container.slot.InventoryContainerSlot;
+import mekanism.common.inventory.container.sync.SyncableBoolean;
+import mekanism.common.inventory.container.sync.SyncableFloatingLong;
 import mekanism.common.inventory.container.sync.SyncableInt;
 import mekanism.common.inventory.slot.BasicInventorySlot;
 import mekanism.common.inventory.slot.EnergyInventorySlot;
@@ -30,7 +33,7 @@ import mekanism.common.inventory.slot.InputInventorySlot;
 import mekanism.common.inventory.slot.OutputInventorySlot;
 import mekanism.common.lib.transmitter.TransmissionType;
 import mekanism.common.registries.MekanismSounds;
-import mekanism.common.inventory.container.sync.SyncableFloatingLong;
+import mekanism.common.tier.FactoryTier;
 import mekanism.common.tile.component.TileComponentEjector;
 import mekanism.common.tile.component.ITileComponent;
 import mekanism.common.tile.component.TileComponentConfig;
@@ -68,15 +71,15 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
 
     private int progress;
     private int duration = DEFAULT_DURATION;
+    private int activeLaneCount;
+    private int runningLaneCount;
+    private boolean energyStarved;
     private boolean planDirty = true;
+    private boolean schedulingNeeded = true;
     private long observedRecipeEpoch = SimulationRecipeResolver.cacheEpoch();
     private final RecipeLookupThrottle lookupThrottle = new RecipeLookupThrottle();
     private final RecipeRoundRobinState roundRobinState = new RecipeRoundRobinState();
-    private boolean repeatEligible;
-    @Nullable
-    private ExecutionPlan activePlan;
-    @Nullable
-    private ExecutionPlan repeatPlan;
+    private final List<LaneState> lanes = new ArrayList<>();
 
     public SimulationChamberBlockEntity(BlockPos pos, BlockState state) {
         this(ModBlocks.SIMULATION_CHAMBER, pos, state);
@@ -122,7 +125,10 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     }
 
     public static FloatingLong getBaseEnergyUsage(@Nullable BaseTier tier) {
-        return FloatingLong.create(BASE_ENERGY_USAGE * getTierMultiplier(tier));
+        // Factory tiers add process lanes. They do not make every individual
+        // operation intrinsically more expensive; running lanes are summed at
+        // runtime just like Mekanism's own factories.
+        return FloatingLong.create(BASE_ENERGY_USAGE);
     }
 
     private static long getTierMultiplier(@Nullable BaseTier tier) {
@@ -208,9 +214,13 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
 
         Level level = getLevel();
         if (level == null || !MekanismUtils.canFunction(this)) {
+            runningLaneCount = 0;
+            energyStarved = false;
             setActive(false);
             return;
         }
+
+        ensureLaneCount();
 
         long recipeEpoch = SimulationRecipeResolver.cacheEpoch();
         if (observedRecipeEpoch != recipeEpoch) {
@@ -221,84 +231,279 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             invalidatePlan();
         }
 
-        if (activePlan != null && planDirty) {
-            if (!activePlan.stillValid(inputSlots, List.of())) {
-                invalidatePlan();
-            } else {
-                planDirty = false;
-            }
+        boolean needsReservation = planDirty || hasEmptyLane() && schedulingNeeded;
+        InputReservation reservation = null;
+        if (needsReservation) {
+            reservation = createInputReservation();
+            validateLaneReservations(reservation);
+            planDirty = false;
         }
 
-        if (activePlan == null) {
-            if (!planDirty) {
-                resetIdle();
-                return;
-            }
+        boolean waitedForLookup = false;
+        if (hasEmptyLane() && schedulingNeeded) {
             if (lookupThrottle.shouldWait(level.getGameTime())) {
+                waitedForLookup = true;
                 if (lookupThrottle.isExplicitWait(level.getGameTime())) {
                     SimulationRecipeResolver.recordReloadDeferral();
                 } else {
                     SimulationRecipeResolver.recordDebounceDeferral();
                 }
-                resetIdle();
-                return;
+            } else {
+                if (reservation == null) {
+                    reservation = createInputReservation();
+                    validateLaneReservations(reservation);
+                }
+                fillEmptyLanes(level, reservation);
+                lookupThrottle.resolved();
+                schedulingNeeded = false;
             }
-            if (repeatEligible && repeatPlan != null) {
-                activePlan = repeatPlan.repeat(level, inputSlots, List.of())
+        }
+
+        boolean didWork = processLanes();
+        updateClientLaneState();
+        setActive(didWork);
+        if (didWork || activeLaneCount > 0 || waitedForLookup) {
+            markForSave();
+        }
+    }
+
+    private void ensureLaneCount() {
+        int target = getParallelProcessCount();
+        while (lanes.size() < target) {
+            lanes.add(new LaneState());
+            schedulingNeeded = true;
+        }
+        while (lanes.size() > target) {
+            lanes.remove(lanes.size() - 1);
+            planDirty = true;
+            schedulingNeeded = true;
+        }
+    }
+
+    private boolean hasEmptyLane() {
+        for (LaneState lane : lanes) {
+            if (lane.plan == null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private InputReservation createInputReservation() {
+        IContentsListener ignored = () -> {
+        };
+        List<BasicInventorySlot> items = new ArrayList<>(inputSlots.size());
+        for (IInventorySlot inputSlot : inputSlots) {
+            BasicInventorySlot snapshot = BasicInventorySlot.at(ignored, 0, 0);
+            snapshot.setStack(inputSlot.getStack().copy());
+            items.add(snapshot);
+        }
+        return new InputReservation(items);
+    }
+
+    private void validateLaneReservations(InputReservation reservation) {
+        boolean[] valid = FactoryLanePolicy.reserveInOrder(lanes,
+                lane -> {
+                    ExecutionPlan reserved = lane.completionPlan != null
+                            ? lane.completionPlan : lane.plan;
+                    return reserved == null || reservation.reserve(reserved);
+                });
+        for (int lane = 0; lane < lanes.size(); lane++) {
+            if (!valid[lane]) {
+                lanes.get(lane).clear();
+            }
+        }
+    }
+
+    private void fillEmptyLanes(Level level, InputReservation reservation) {
+        if (isFanModuleInstalled() && lanes.stream()
+                .anyMatch(lane -> lane.plan != null && lane.plan.isFanProcessing())) {
+            // A fan lane is already one whole batch. Do not let factory-tier
+            // parallel lanes claim a fifth output group in the same cycle.
+            return;
+        }
+        RecipeRoundRobinState queuedRoundRobin = new RecipeRoundRobinState();
+        queuedRoundRobin.restore(roundRobinState.snapshot());
+        // Existing lanes have reserved their future turns, but those turns are
+        // not committed to the persistent cursor until the operation actually
+        // consumes input and inserts output. Include the reservations only in
+        // this temporary scheduling view so newly filled lanes do not duplicate
+        // an already queued equal-priority result.
+        for (LaneState lane : lanes) {
+            if (lane.plan != null) {
+                ExecutionPlan reserved = lane.completionPlan != null
+                        ? lane.completionPlan : lane.plan;
+                reserved.advanceRoundRobin(queuedRoundRobin);
+            }
+        }
+        for (LaneState lane : lanes) {
+            if (lane.plan != null) {
+                continue;
+            }
+            ExecutionPlan plan = null;
+            if (lane.repeatEligible && lane.repeatPlan != null) {
+                plan = lane.repeatPlan.repeat(level, reservation.items, List.of())
                         .orElse(null);
             }
-            repeatEligible = false;
-            repeatPlan = null;
-            if (activePlan == null) {
-                activePlan = SimulationRecipeResolver.resolve(
-                        level, moduleSlot.getStack(), conditionSlot.getStack(), inputSlots,
-                        List.of(), false, roundRobinState).orElse(null);
+            lane.repeatEligible = false;
+            lane.repeatPlan = null;
+            if (plan == null) {
+                plan = SimulationRecipeResolver.resolve(
+                        level, moduleSlot.getStack(), conditionSlot.getStack(),
+                        reservation.items, List.of(), false,
+                        queuedRoundRobin).orElse(null);
             }
-            planDirty = false;
-            lookupThrottle.resolved();
-            if (activePlan == null) {
-                resetIdle();
-                return;
+            if (plan == null || !reservation.reserve(plan)) {
+                // Every later lane sees the same remaining pool, so another
+                // full resolver pass cannot discover additional work.
+                break;
             }
-            progress = 0;
-            duration = MekanismUtils.getTicks(this, getTierDuration(activePlan.duration()));
-            energyContainer.setEnergyPerTick(getTierEnergyUsage(activePlan.energyPerTick()));
-        }
-
-        if (!canFit(activePlan.itemResults())) {
-            setActive(false);
-            return;
-        }
-
-        FloatingLong energyPerTick = energyContainer.getEnergyPerTick();
-        if (energyContainer.extract(energyPerTick, Action.SIMULATE, AutomationType.INTERNAL).smallerThan(energyPerTick)) {
-            setActive(false);
-            return;
-        }
-
-        energyContainer.extract(energyPerTick, Action.EXECUTE, AutomationType.INTERNAL);
-        setActive(true);
-        progress++;
-        if (progress >= duration) {
-            if (!activePlan.stillValid(inputSlots, List.of()) || !canFit(activePlan.itemResults())) {
-                invalidatePlan();
-                setActive(false);
-                return;
+            lane.start(plan, adjustedDuration(plan), adjustedEnergy(plan));
+            // Reserve the deterministic equal-priority result in the temporary
+            // scheduling view. Later lanes therefore select the next result,
+            // while the persistent cursor still waits for real completion.
+            plan.advanceRoundRobin(queuedRoundRobin);
+            if (plan.isFanProcessing()) {
+                break;
             }
-            ExecutionPlan completedPlan = activePlan;
-            activePlan.consume(inputSlots, List.of());
-            insertResults(activePlan.itemResults());
-            activePlan.advanceRoundRobin(roundRobinState);
-            activePlan = null;
-            progress = 0;
-            duration = DEFAULT_DURATION;
-            resetEnergyUsage();
+        }
+    }
+
+    private boolean processLanes() {
+        Level level = getLevel();
+        if (level == null) {
+            return false;
+        }
+        OutputReservation outputReservation = new OutputReservation();
+        List<LaneState> runnable = new ArrayList<>(lanes.size());
+        FloatingLong requestedEnergy = FloatingLong.ZERO;
+        FloatingLong availableEnergy = energyContainer.getEnergy();
+        boolean starved = false;
+        for (int laneIndex = 0; laneIndex < lanes.size(); laneIndex++) {
+            LaneState lane = lanes.get(laneIndex);
+            if (lane.plan == null) {
+                lane.status = LaneStatus.IDLE;
+                continue;
+            }
+            requestedEnergy = requestedEnergy.add(lane.energyPerTick);
+            // Allocate the shared energy pool in stable lane order, but do not
+            // let one expensive lane prevent a later, cheaper independent lane
+            // from using energy that is actually available.
+            boolean hasEnergy = !availableEnergy.smallerThan(lane.energyPerTick);
+            boolean finishing = lane.progress + 1 >= lane.duration;
+            ExecutionPlan executionPlan = lane.completionPlan != null
+                    ? lane.completionPlan : lane.plan;
+            if (hasEnergy && FanProcessingPolicy.shouldSnapshotAtCompletion(
+                    lane.plan.isFanProcessing(), finishing,
+                    lane.completionPlan != null)) {
+                executionPlan = SimulationRecipeResolver.resolveFanCompletion(
+                        level, moduleSlot.getStack(), conditionSlot.getStack(),
+                        inputSlots, false, roundRobinState).orElse(null);
+                if (executionPlan == null) {
+                    lane.clear();
+                    planDirty = true;
+                    schedulingNeeded = true;
+                    continue;
+                }
+                // Lock the completion snapshot. If outputs are blocked, the
+                // same rolls and the same four groups are retried next tick.
+                lane.completionPlan = executionPlan;
+            }
+            if (!hasEnergy) {
+                lane.status = LaneStatus.ENERGY_STARVED;
+                starved = true;
+                continue;
+            }
+            if (finishing && !outputReservation.reserve(executionPlan.itemResults())) {
+                lane.status = LaneStatus.OUTPUT_BLOCKED;
+                continue;
+            }
+            lane.status = LaneStatus.RUNNING;
+            runnable.add(lane);
+            availableEnergy = availableEnergy.subtract(lane.energyPerTick);
+        }
+        energyContainer.setEnergyPerTick(requestedEnergy.isZero()
+                ? adjustedIdleEnergyUsage() : requestedEnergy);
+
+        boolean didWork = false;
+        for (LaneState lane : runnable) {
+            FloatingLong energy = lane.energyPerTick;
+            if (energyContainer.extract(energy, Action.SIMULATE,
+                    AutomationType.INTERNAL).smallerThan(energy)) {
+                lane.status = LaneStatus.ENERGY_STARVED;
+                starved = true;
+                continue;
+            }
+            energyContainer.extract(energy, Action.EXECUTE, AutomationType.INTERNAL);
+            lane.progress++;
+            didWork = true;
+            if (lane.progress < lane.duration) {
+                continue;
+            }
+            ExecutionPlan completed = lane.completionPlan != null
+                    ? lane.completionPlan : lane.plan;
+            if (!completed.stillValid(inputSlots, List.of())
+                    || !canFit(completed.itemResults())) {
+                lane.clear();
+                planDirty = true;
+                continue;
+            }
+            completed.consume(inputSlots, List.of());
+            insertResults(completed.itemResults());
+            completed.advanceRoundRobin(roundRobinState);
+            lane.complete(completed);
             planDirty = true;
-            repeatPlan = completedPlan;
-            repeatEligible = true;
             lookupThrottle.clear();
         }
-        markForSave();
+        energyStarved = starved;
+        return didWork;
+    }
+
+    private int adjustedDuration(ExecutionPlan plan) {
+        return Math.max(1, MekanismUtils.getTicks(this, plan.duration()));
+    }
+
+    private FloatingLong adjustedEnergy(ExecutionPlan plan) {
+        FloatingLong adjusted = MekanismUtils.getEnergyPerTick(this,
+                FloatingLong.create(Math.max(1, plan.energyPerTick())));
+        return adjusted.isZero() ? FloatingLong.ONE : adjusted;
+    }
+
+    private FloatingLong adjustedIdleEnergyUsage() {
+        FloatingLong adjusted = MekanismUtils.getEnergyPerTick(this,
+                FloatingLong.create(BASE_ENERGY_USAGE));
+        return adjusted.isZero() ? FloatingLong.ONE : adjusted;
+    }
+
+    private void updateClientLaneState() {
+        activeLaneCount = 0;
+        runningLaneCount = 0;
+        LaneState display = null;
+        double bestProgress = 0;
+        for (LaneState lane : lanes) {
+            if (lane.plan == null) {
+                continue;
+            }
+            activeLaneCount++;
+            if (lane.status == LaneStatus.RUNNING) {
+                runningLaneCount++;
+            }
+            double scaled = lane.duration <= 0 ? 0 : lane.progress / (double) lane.duration;
+            if (display == null || scaled > bestProgress) {
+                display = lane;
+                bestProgress = scaled;
+            }
+        }
+        if (display == null) {
+            progress = 0;
+            duration = DEFAULT_DURATION;
+            if (!energyContainer.getEnergyPerTick().equals(adjustedIdleEnergyUsage())) {
+                resetEnergyUsage();
+            }
+        } else {
+            progress = display.progress;
+            duration = display.duration;
+        }
     }
 
     private void insertResults(List<ItemStack> results) {
@@ -326,25 +531,17 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         return true;
     }
 
-    private void resetIdle() {
-        if (progress != 0 || duration != DEFAULT_DURATION || getActive()) {
-            progress = 0;
-            duration = DEFAULT_DURATION;
-            resetEnergyUsage();
-            setActive(false);
-            markForSave();
-        } else {
-            setActive(false);
-        }
-    }
-
     private void invalidatePlan() {
-        activePlan = null;
-        repeatPlan = null;
-        repeatEligible = false;
+        for (LaneState lane : lanes) {
+            lane.clear();
+        }
         planDirty = true;
+        schedulingNeeded = true;
         progress = 0;
         duration = DEFAULT_DURATION;
+        activeLaneCount = 0;
+        runningLaneCount = 0;
+        energyStarved = false;
         resetEnergyUsage();
         if (getLevel() != null) {
             markForSave();
@@ -353,33 +550,19 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
 
     private void onInputsChanged() {
         planDirty = true;
-        repeatPlan = null;
-        repeatEligible = false;
+        schedulingNeeded = true;
+        for (LaneState lane : lanes) {
+            lane.repeatPlan = null;
+            lane.repeatEligible = false;
+        }
         Level level = getLevel();
         if (level != null) {
             lookupThrottle.inputChanged(level.getGameTime());
         }
     }
 
-    private int getTierDuration(int baseDuration) {
-        BaseTier tier = Attribute.getBaseTier(getBlockType());
-        double multiplier = tier == null ? 1.0 : switch (tier) {
-            case BASIC -> 0.75;
-            case ADVANCED -> 0.5;
-            case ELITE -> 1.0 / 3.0;
-            case ULTIMATE, CREATIVE -> 0.25;
-        };
-        return Math.max(1, (int) Math.ceil(Math.max(1, baseDuration) * multiplier));
-    }
-
-    private FloatingLong getTierEnergyUsage(long baseEnergyPerTick) {
-        return FloatingLong.create(Math.max(1, Math.multiplyExact(baseEnergyPerTick,
-                getTierMultiplier(Attribute.getBaseTier(getBlockType())))));
-    }
-
     private void resetEnergyUsage() {
-        energyContainer.setEnergyPerTick(getBaseEnergyUsage(
-                Attribute.getBaseTier(getBlockType())));
+        energyContainer.setEnergyPerTick(adjustedIdleEnergyUsage());
     }
 
     public boolean isFanModuleInstalled() {
@@ -407,12 +590,28 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         return energyContainer;
     }
 
+    public int getParallelProcessCount() {
+        return processCountFor(Attribute.getTier(getBlockType(), FactoryTier.class));
+    }
+
+    static int processCountFor(@Nullable FactoryTier tier) {
+        return FactoryLanePolicy.processCount(tier == null ? 0 : tier.processes);
+    }
+
+    public int getActiveLaneCount() {
+        return activeLaneCount;
+    }
+
+    public int getRunningLaneCount() {
+        return runningLaneCount;
+    }
+
     public double getScaledProgress() {
         return duration <= 0 ? 0 : progress / (double) duration;
     }
 
     public boolean isEnergyStarved() {
-        return progress > 0 && energyContainer.getEnergy().smallerThan(energyContainer.getEnergyPerTick());
+        return energyStarved;
     }
 
     @Override
@@ -420,8 +619,33 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         super.addContainerTrackers(container);
         container.track(SyncableInt.create(() -> progress, value -> progress = value));
         container.track(SyncableInt.create(() -> duration, value -> duration = value));
+        container.track(SyncableInt.create(() -> activeLaneCount, value -> activeLaneCount = value));
+        container.track(SyncableInt.create(() -> runningLaneCount, value -> runningLaneCount = value));
+        container.track(SyncableBoolean.create(() -> energyStarved, value -> energyStarved = value));
         container.track(SyncableFloatingLong.create(energyContainer::getEnergyPerTick,
                 energyContainer::setEnergyPerTick));
+    }
+
+    @Override
+    public void recalculateUpgrades(Upgrade upgrade) {
+        super.recalculateUpgrades(upgrade);
+        if (upgrade != Upgrade.SPEED && upgrade != Upgrade.ENERGY) {
+            return;
+        }
+        for (LaneState lane : lanes) {
+            if (lane.plan == null) {
+                continue;
+            }
+            if (upgrade == Upgrade.SPEED) {
+                int oldDuration = lane.duration;
+                int newDuration = adjustedDuration(lane.plan);
+                lane.progress = oldDuration <= 0 ? 0 : Math.min(newDuration - 1,
+                        (int) Math.floor(lane.progress * (double) newDuration / oldDuration));
+                lane.duration = newDuration;
+            }
+            lane.energyPerTick = adjustedEnergy(lane.plan);
+        }
+        updateClientLaneState();
     }
 
     @Override
@@ -440,10 +664,12 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         // datapack recipe change can never finish an old operation.
         progress = 0;
         duration = DEFAULT_DURATION;
-        activePlan = null;
-        repeatPlan = null;
-        repeatEligible = false;
+        lanes.clear();
+        activeLaneCount = 0;
+        runningLaneCount = 0;
+        energyStarved = false;
         planDirty = true;
+        schedulingNeeded = true;
         lookupThrottle.clear();
         resetEnergyUsage();
     }
@@ -485,16 +711,109 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         }
         progress = 0;
         duration = DEFAULT_DURATION;
-        activePlan = null;
-        repeatPlan = null;
-        repeatEligible = false;
+        lanes.clear();
+        activeLaneCount = 0;
+        runningLaneCount = 0;
+        energyStarved = false;
         planDirty = true;
+        schedulingNeeded = true;
         lookupThrottle.clear();
         resetEnergyUsage();
         Level level = getLevel();
         if (level != null && !level.isClientSide()) {
             level.playSound(null, getBlockPos(), MekanismSounds.HYDRAULIC.get(),
                     SoundSource.BLOCKS, 0.8F, 1.0F);
+        }
+    }
+
+    private record InputReservation(List<BasicInventorySlot> items) {
+        private boolean reserve(ExecutionPlan plan) {
+            if (!plan.stillValid(items, List.of())) {
+                return false;
+            }
+            plan.consume(items, List.of());
+            return true;
+        }
+    }
+
+    /**
+     * Simulates all lanes that can finish during this tick. A failed lane does
+     * not mutate the reservation, so a later lane producing a different item
+     * can still finish instead of being stalled behind it.
+     */
+    private final class OutputReservation {
+        private ItemStackHandler items;
+
+        private OutputReservation() {
+            items = new ItemStackHandler(OUTPUT_COUNT);
+            for (int slot = 0; slot < OUTPUT_COUNT; slot++) {
+                items.setStackInSlot(slot, outputSlots.get(slot).getStack().copy());
+            }
+        }
+
+        private boolean reserve(List<ItemStack> itemResults) {
+            ItemStackHandler itemCopy = new ItemStackHandler(OUTPUT_COUNT);
+            for (int slot = 0; slot < OUTPUT_COUNT; slot++) {
+                itemCopy.setStackInSlot(slot, items.getStackInSlot(slot).copy());
+            }
+            for (ItemStack result : itemResults) {
+                if (!ItemHandlerHelper.insertItemStacked(itemCopy, result.copy(), false).isEmpty()) {
+                    return false;
+                }
+            }
+            items = itemCopy;
+            return true;
+        }
+    }
+
+    private enum LaneStatus {
+        IDLE,
+        RUNNING,
+        OUTPUT_BLOCKED,
+        ENERGY_STARVED
+    }
+
+    private static final class LaneState {
+        @Nullable
+        private ExecutionPlan plan;
+        @Nullable
+        private ExecutionPlan repeatPlan;
+        @Nullable
+        private ExecutionPlan completionPlan;
+        private boolean repeatEligible;
+        private int progress;
+        private int duration = DEFAULT_DURATION;
+        private FloatingLong energyPerTick = FloatingLong.create(BASE_ENERGY_USAGE);
+        private LaneStatus status = LaneStatus.IDLE;
+
+        private void start(ExecutionPlan plan, int duration, FloatingLong energyPerTick) {
+            this.plan = plan;
+            this.completionPlan = null;
+            this.progress = 0;
+            this.duration = duration;
+            this.energyPerTick = energyPerTick;
+            this.status = LaneStatus.RUNNING;
+        }
+
+        private void complete(ExecutionPlan completed) {
+            clearActive();
+            repeatPlan = completed;
+            repeatEligible = true;
+        }
+
+        private void clear() {
+            clearActive();
+            repeatPlan = null;
+            repeatEligible = false;
+        }
+
+        private void clearActive() {
+            plan = null;
+            completionPlan = null;
+            progress = 0;
+            duration = DEFAULT_DURATION;
+            energyPerTick = FloatingLong.create(BASE_ENERGY_USAGE);
+            status = LaneStatus.IDLE;
         }
     }
 

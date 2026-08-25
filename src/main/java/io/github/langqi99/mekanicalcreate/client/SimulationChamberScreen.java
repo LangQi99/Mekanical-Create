@@ -2,6 +2,7 @@ package io.github.langqi99.mekanicalcreate.client;
 
 import io.github.langqi99.mekanicalcreate.content.SimulationChamberBlockEntity;
 import mekanism.client.gui.GuiConfigurableTile;
+import mekanism.client.gui.element.GuiElement;
 import mekanism.client.gui.element.bar.GuiVerticalPowerBar;
 import mekanism.client.gui.element.progress.GuiProgress;
 import mekanism.client.gui.element.progress.ProgressType;
@@ -35,7 +36,34 @@ abstract class AbstractSimulationChamberScreen<TILE extends SimulationChamberBlo
         super.addGuiElements();
         addRenderableWidget(new GuiVerticalPowerBar(this, tile.getEnergyContainer(), 11, 24))
                 .warning(WarningType.NOT_ENOUGH_ENERGY, tile::isEnergyStarved);
-        addRenderableWidget(new GuiProgress(tile::getScaledProgress, ProgressType.SMALL_RIGHT, this, 123, 55));
+        int progressX = 123;
+        addRenderableWidget(new GuiProgress(tile::getScaledProgress,
+                ProgressType.SMALL_RIGHT, this, progressX, 55));
+        addRenderableWidget(new GuiElement(this, progressX, 43, 28, 9) {
+            @Override
+            public void drawBackground(@NotNull GuiGraphics graphics, int mouseX,
+                                       int mouseY, float partialTicks) {
+                int capacity = tile.getParallelProcessCount();
+                if (capacity <= 1) {
+                    return;
+                }
+                String text = tile.getActiveLaneCount() + "/" + capacity;
+                graphics.drawString(minecraft.font, text,
+                        getX() + (width - minecraft.font.width(text)) / 2, getY(),
+                        0x404040, false);
+            }
+
+            @Override
+            public void renderToolTip(@NotNull GuiGraphics graphics, int mouseX, int mouseY) {
+                int capacity = tile.getParallelProcessCount();
+                if (capacity > 1) {
+                    graphics.renderTooltip(minecraft.font, Component.translatable(
+                            "gui.mekanicalcreate.parallel_lanes.tooltip",
+                            tile.getActiveLaneCount(), tile.getRunningLaneCount(), capacity),
+                            mouseX, mouseY);
+                }
+            }
+        });
         addRenderableWidget(new GuiEnergyTab(this, tile.getEnergyContainer(), tile::getActive));
     }
 
