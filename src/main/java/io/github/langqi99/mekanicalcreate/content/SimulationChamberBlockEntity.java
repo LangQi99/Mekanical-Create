@@ -471,7 +471,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                 lane.status = LaneStatus.IDLE;
                 continue;
             }
-            requestedEnergy = saturatingAdd(requestedEnergy, lane.energyPerTick);
             // Allocate the shared energy pool in stable lane order, but do not
             // let one expensive lane prevent a later, cheaper independent lane
             // from using energy that is actually available.
@@ -484,7 +483,8 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                     lane.completionPlan != null)) {
                 executionPlan = SimulationRecipeResolver.resolveFanCompletion(
                         level, moduleSlot.getStack(), conditionSlot.getStack(),
-                        inputSlots, supportsFluids(), roundRobinState).orElse(null);
+                        inputSlots, outputReservation.itemStacks(), supportsFluids(),
+                        roundRobinState).orElse(null);
                 if (executionPlan == null) {
                     lane.clear();
                     planDirty = true;
@@ -492,19 +492,25 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                     continue;
                 }
                 // Lock the completion snapshot. If outputs are blocked, the
-                // same rolls and the same four groups are retried next tick.
+                // same rolls and capacity-bounded input amount are retried.
                 lane.completionPlan = executionPlan;
             }
             if (!hasEnergy) {
+                requestedEnergy = saturatingAdd(requestedEnergy, lane.energyPerTick);
                 lane.status = LaneStatus.ENERGY_STARVED;
                 starved = true;
                 continue;
             }
-            if (finishing && !outputReservation.reserve(
+            if (FanProcessingPolicy.shouldReserveOutputsBeforeProgress(
+                    lane.plan.isFanProcessing(), finishing)
+                    && !outputReservation.reserve(
                     executionPlan.itemResults(), executionPlan.fluidResults())) {
+                lane.progress = FanProcessingPolicy.progressAfterOutputBlock(
+                        lane.plan.isFanProcessing(), lane.progress);
                 lane.status = LaneStatus.OUTPUT_BLOCKED;
                 continue;
             }
+            requestedEnergy = saturatingAdd(requestedEnergy, lane.energyPerTick);
             lane.status = LaneStatus.RUNNING;
             runnable.add(lane);
             availableEnergy -= lane.energyPerTick;
@@ -601,12 +607,16 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
 
     private void insertResults(List<ItemStack> results) {
         for (ItemStack result : results) {
-            ItemStack remainder = result.copy();
-            for (OutputInventorySlot outputSlot : outputSlots) {
-                remainder = outputSlot.insertItem(remainder, Action.EXECUTE, AutomationType.INTERNAL);
-                if (remainder.isEmpty()) {
-                    break;
-                }
+            ItemStack remainder = StackedOutputInsertion.insert(
+                    outputSlots, result.copy(), ItemStack::isEmpty,
+                    (slot, stack) -> ItemStack.isSameItemSameComponents(
+                            slot.getStack(), stack),
+                    slot -> slot.getStack().isEmpty(),
+                    (slot, stack) -> slot.insertItem(
+                            stack, Action.EXECUTE, AutomationType.INTERNAL));
+            if (!remainder.isEmpty()) {
+                throw new IllegalStateException(
+                        "Output capacity changed after successful reservation");
             }
         }
     }
@@ -994,6 +1004,12 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             items = itemCopy;
             fluids = fluidCopy;
             return true;
+        }
+
+        private List<ItemStack> itemStacks() {
+            return java.util.stream.IntStream.range(0, OUTPUT_COUNT)
+                    .mapToObj(slot -> items.getStackInSlot(slot).copy())
+                    .toList();
         }
     }
 

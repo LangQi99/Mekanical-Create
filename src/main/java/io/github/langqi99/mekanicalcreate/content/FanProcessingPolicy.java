@@ -23,12 +23,11 @@ import net.minecraft.world.item.crafting.RecipeType;
  * implicitly trusted.</p>
  */
 final class FanProcessingPolicy {
-    static final int TIME_MULTIPLIER = 10;
     static final int ITEMS_PER_TIME_STEP = 16;
-    // The machine has four item output slots. One fan operation therefore
-    // claims at most four processable input stacks; any later stack remains for
-    // the next progress cycle.
-    static final int MAX_OUTPUT_GROUPS = 4;
+    // Fan batches are sized against these actual item slots. The number of
+    // accepted input stacks is deliberately not capped: one recipe can produce
+    // multiple stacks, while several inputs can merge into the same output.
+    static final int OUTPUT_SLOT_COUNT = 4;
 
     private FanProcessingPolicy() {
     }
@@ -65,13 +64,11 @@ final class FanProcessingPolicy {
         return batchDuration(configured, stackCount);
     }
 
-    /** Mirrors Create's ceil(stack / 16) timing and then applies the requested 10x processing time. */
+    /** Mirrors Create's native ceil(stack / 16) fan-processing timing. */
     static int batchDuration(int fanProcessingTime, int stackCount) {
         int steps = Math.max(1, (Math.max(1, stackCount) - 1) / ITEMS_PER_TIME_STEP + 1);
         long createDuration = Math.max(0L, fanProcessingTime) * steps + 1L;
-        long slowed = createDuration > Integer.MAX_VALUE / TIME_MULTIPLIER
-                ? Integer.MAX_VALUE : createDuration * TIME_MULTIPLIER;
-        return (int) Math.max(1L, slowed);
+        return (int) Math.max(1L, Math.min(Integer.MAX_VALUE, createDuration));
     }
 
     /** Pure helper kept visible for deterministic round-robin unit tests. */
@@ -82,14 +79,19 @@ final class FanProcessingPolicy {
         return (int) Math.floorMod(persistedCursor + plannedAdvances, optionCount);
     }
 
-    static boolean canAcceptOutputGroup(int acceptedGroups) {
-        return acceptedGroups >= 0 && acceptedGroups < MAX_OUTPUT_GROUPS;
-    }
-
     static boolean shouldSnapshotAtCompletion(boolean fanProcessing,
                                               boolean reachesCompletion,
                                               boolean alreadySnapshotted) {
         return fanProcessing && reachesCompletion && !alreadySnapshotted;
+    }
+
+    static boolean shouldReserveOutputsBeforeProgress(boolean fanProcessing,
+                                                      boolean reachesCompletion) {
+        return fanProcessing || reachesCompletion;
+    }
+
+    static int progressAfterOutputBlock(boolean fanProcessing, int currentProgress) {
+        return fanProcessing ? 0 : currentProgress;
     }
 
     enum Mode {
