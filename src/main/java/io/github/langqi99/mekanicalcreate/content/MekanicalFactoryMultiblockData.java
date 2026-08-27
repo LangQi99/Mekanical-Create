@@ -308,7 +308,7 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
                 activePlan.isFanProcessing(), finishing,
                 fanCompletionPlan != null)) {
             executionPlan = SimulationRecipeResolver.resolveFanCompletion(
-                    level, activeCatalystSlots(), inputSlots, true,
+                    level, activeCatalystSlots(), inputSlots, outputContents(), true,
                     roundRobinState()).orElse(null);
             if (executionPlan == null) {
                 invalidatePlan();
@@ -319,6 +319,8 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
             fanCompletionPlan = executionPlan;
         }
         if (!canFit(executionPlan.itemResults(), executionPlan.fluidResults())) {
+            progress = FanProcessingPolicy.progressAfterOutputBlock(
+                    activePlan.isFanProcessing(), progress);
             return setInactive(needsPacket, false);
         }
 
@@ -397,7 +399,7 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
                     timingPlan.isFanProcessing(), true,
                     fanCompletionPlan != null)) {
                 plan = SimulationRecipeResolver.resolveFanCompletion(
-                        level, activeCatalystSlots(), inputSlots, true,
+                        level, activeCatalystSlots(), inputSlots, outputContents(), true,
                         roundRobinState()).orElse(null);
                 if (plan == null) {
                     invalidatePlan();
@@ -525,12 +527,16 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
 
     private void insertResults(List<ItemStack> results) {
         for (ItemStack result : results) {
-            ItemStack remainder = result.copy();
-            for (BasicInventorySlot outputSlot : outputSlots) {
-                remainder = outputSlot.insertItem(remainder, Action.EXECUTE, AutomationType.INTERNAL);
-                if (remainder.isEmpty()) {
-                    break;
-                }
+            ItemStack remainder = StackedOutputInsertion.insert(
+                    outputSlots, result.copy(), ItemStack::isEmpty,
+                    (slot, stack) -> ItemStack.isSameItemSameTags(
+                            slot.getStack(), stack),
+                    slot -> slot.getStack().isEmpty(),
+                    (slot, stack) -> slot.insertItem(
+                            stack, Action.EXECUTE, AutomationType.INTERNAL));
+            if (!remainder.isEmpty()) {
+                throw new IllegalStateException(
+                        "Output capacity changed after successful reservation");
             }
         }
     }
@@ -586,6 +592,12 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
             }
         }
         return true;
+    }
+
+    private List<ItemStack> outputContents() {
+        return outputSlots.stream()
+                .map(slot -> slot.getStack().copy())
+                .toList();
     }
 
     public IEnergyContainer getEnergyContainer() {

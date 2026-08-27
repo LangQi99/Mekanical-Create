@@ -208,6 +208,7 @@ public final class SimulationRecipeResolver {
     static Optional<ExecutionPlan> resolveFanCompletion(
             Level level, ItemStack module, ItemStack condition,
             List<? extends IInventorySlot> inputSlots,
+            List<ItemStack> outputContents,
             boolean allowFluidProcessing,
             RecipeRoundRobinState roundRobinState) {
         if (!module.is(AllBlocks.ENCASED_FAN.asItem())) {
@@ -217,7 +218,7 @@ public final class SimulationRecipeResolver {
                 .map(IInventorySlot::getStack).toList();
         return FanProcessingPolicy.modeFor(condition)
                 .flatMap(mode -> resolveFanBatch(level, inventory, mode,
-                        allowFluidProcessing, roundRobinState));
+                        allowFluidProcessing, roundRobinState, outputContents));
     }
 
     /**
@@ -285,6 +286,7 @@ public final class SimulationRecipeResolver {
     static Optional<ExecutionPlan> resolveFanCompletion(
             Level level, List<? extends IInventorySlot> catalystSlots,
             List<? extends IInventorySlot> inputSlots,
+            List<ItemStack> outputContents,
             boolean allowFluidProcessing,
             RecipeRoundRobinState roundRobinState) {
         List<ItemStack> catalysts = distinctStacks(catalystSlots.stream()
@@ -302,7 +304,7 @@ public final class SimulationRecipeResolver {
                 .map(IInventorySlot::getStack).toList();
         return FanProcessingPolicy.highestPriorityMode(conditions)
                 .flatMap(mode -> resolveFanBatch(level, inventory, mode,
-                        allowFluidProcessing, roundRobinState));
+                        allowFluidProcessing, roundRobinState, outputContents));
     }
 
     private static Optional<ExecutionPlan> resolve(Level level,
@@ -417,14 +419,22 @@ public final class SimulationRecipeResolver {
     }
 
     /**
-     * Builds one immutable fan operation from the first four currently
-     * processable input stacks. Candidate discovery is still performed once
-     * through the cached catalog; only the cheap exact result roll is repeated
-     * per processed item.
+     * Builds one immutable fan operation whose exact rolled results fit the
+     * machine's four item output slots. Candidate discovery is still performed
+     * once through the cached catalog; only the cheap exact result roll is
+     * repeated per processed item.
      */
     private static Optional<ExecutionPlan> resolveFanBatch(
             Level level, List<ItemStack> inventory, FanProcessingPolicy.Mode mode,
             boolean allowFluidProcessing, RecipeRoundRobinState roundRobinState) {
+        return resolveFanBatch(level, inventory, mode, allowFluidProcessing,
+                roundRobinState, List.of());
+    }
+
+    private static Optional<ExecutionPlan> resolveFanBatch(
+            Level level, List<ItemStack> inventory, FanProcessingPolicy.Mode mode,
+            boolean allowFluidProcessing, RecipeRoundRobinState roundRobinState,
+            List<ItemStack> outputContents) {
         List<Candidate> candidates = candidateCatalog(level, AllBlocks.ENCASED_FAN.asStack(),
                 mode.conditionStack(), allowFluidProcessing).candidatesFor(inventory).stream()
                 .filter(Candidate::isFanProcessing)
@@ -440,12 +450,10 @@ public final class SimulationRecipeResolver {
         Candidate representative = null;
         int duration = 1;
         long energyPerTick = 1;
-        int acceptedGroups = 0;
+        FanOutputCapacity outputCapacity = new FanOutputCapacity(
+                FanProcessingPolicy.OUTPUT_SLOT_COUNT, outputContents);
 
         for (int slot = 0; slot < inventory.size(); slot++) {
-            if (!FanProcessingPolicy.canAcceptOutputGroup(acceptedGroups)) {
-                break;
-            }
             ItemStack input = inventory.get(slot);
             if (input.isEmpty()) {
                 continue;
@@ -476,8 +484,6 @@ public final class SimulationRecipeResolver {
             if (matches.isEmpty()) {
                 continue;
             }
-            acceptedGroups++;
-
             HighestPriorityRoundRobin.Selection<CandidateMatch> selection =
                     selectMatch(matches, roundRobinState);
             List<CandidateMatch> tied = matches.stream()
@@ -488,34 +494,58 @@ public final class SimulationRecipeResolver {
             String rotationGroup = selection.group();
             int alreadyPlanned = rotationGroup == null ? 0
                     : plannedAdvances.getOrDefault(rotationGroup, 0);
+            int acceptedFromSlot = 0;
 
-            stackUses.add(new StackUse(slot, input.getCount(), copyWithCount(input, 1)));
-            duration = Math.max(duration,
-                    FanProcessingPolicy.batchDuration(input.getCount()));
-            for (int operation = 0; operation < input.getCount(); operation++) {
+            while (acceptedFromSlot < input.getCount()) {
                 Candidate selectedCandidate;
                 if (rotationGroup == null) {
                     selectedCandidate = selection.value().candidate;
                 } else {
                     int index = FanProcessingPolicy.rotationIndex(
-                            roundRobinState.cursor(rotationGroup), alreadyPlanned + operation,
+                            roundRobinState.cursor(rotationGroup),
+                            alreadyPlanned + acceptedFromSlot,
                             tied.size());
                     selectedCandidate = tied.get(index).candidate;
-                    rotationGroups.add(rotationGroup);
                 }
                 Match unit = fanUnitMatch(selectedCandidate, slot, input);
-                for (ItemStack result : selectedCandidate.resultFactory.apply(level, unit)) {
-                    if (!result.isEmpty()) {
-                        addStacked(itemResults, result.copy());
-                    }
+                StackedOutputCapacity.Admission<List<ItemStack>> admission =
+                        outputCapacity.admit(fanPossibleResults(selectedCandidate),
+                                () -> rollFanResults(level, selectedCandidate, unit),
+                                representative != null);
+                if (admission.status()
+                        == StackedOutputCapacity.AdmissionStatus.STOPPED) {
+                    break;
+                }
+                List<ItemStack> operationResults = admission.value().orElseThrow();
+                if (admission.status()
+                        == StackedOutputCapacity.AdmissionStatus.BLOCKED) {
+                    // Preserve this exact roll as the locked completion plan.
+                    // Continuing with later inputs would discard and reroll it
+                    // next cycle, biasing probability outputs.
+                    return Optional.of(new FanBlockedOperation(slot,
+                            copyWithCount(input, 1), selectedCandidate,
+                            operationResults, rotationGroup).toPlan());
+                }
+                acceptedFromSlot++;
+                for (ItemStack result : operationResults) {
+                    addStacked(itemResults, result.copy());
+                }
+                if (rotationGroup != null) {
+                    rotationGroups.add(rotationGroup);
                 }
                 if (representative == null) {
                     representative = selectedCandidate;
                 }
                 energyPerTick = Math.max(energyPerTick, selectedCandidate.energyPerTick);
             }
-            if (rotationGroup != null) {
-                plannedAdvances.merge(rotationGroup, input.getCount(), Integer::sum);
+            if (acceptedFromSlot > 0) {
+                stackUses.add(new StackUse(slot, acceptedFromSlot,
+                        copyWithCount(input, 1)));
+                duration = Math.max(duration,
+                        FanProcessingPolicy.batchDuration(acceptedFromSlot));
+                if (rotationGroup != null) {
+                    plannedAdvances.merge(rotationGroup, acceptedFromSlot, Integer::sum);
+                }
             }
         }
 
@@ -525,6 +555,42 @@ public final class SimulationRecipeResolver {
         return Optional.of(new ExecutionPlan(representative.id, duration, energyPerTick,
                 stackUses, List.of(), List.of(), itemResults, List.of(), representative,
                 rotationGroups));
+    }
+
+    private static List<ItemStack> fanPossibleResults(Candidate candidate) {
+        return candidate.displayOutputs.stream()
+                .filter(output -> output.chance > 0)
+                .map(output -> output.stack.copy())
+                .toList();
+    }
+
+    private static List<ItemStack> rollFanResults(Level level, Candidate candidate,
+                                                   Match unit) {
+        List<ItemStack> results = new ArrayList<>();
+        for (ItemStack result : candidate.resultFactory.apply(level, unit)) {
+            if (!result.isEmpty()) {
+                addStacked(results, result.copy());
+            }
+        }
+        return results;
+    }
+
+    private record FanBlockedOperation(int slot, ItemStack expected,
+                                       Candidate candidate,
+                                       List<ItemStack> itemResults,
+                                       @Nullable String rotationGroup) {
+        private FanBlockedOperation {
+            expected = copyWithCount(expected, 1);
+            itemResults = itemResults.stream().map(ItemStack::copy).toList();
+        }
+
+        private ExecutionPlan toPlan() {
+            return new ExecutionPlan(candidate.id,
+                    FanProcessingPolicy.batchDuration(1), candidate.energyPerTick,
+                    List.of(new StackUse(slot, 1, expected)), List.of(), List.of(),
+                    itemResults, List.of(), candidate,
+                    rotationGroup == null ? List.of() : List.of(rotationGroup));
+        }
     }
 
     private static Match fanUnitMatch(Candidate candidate, int slot, ItemStack input) {
