@@ -7,7 +7,8 @@
     "0.2.3": "Fixes a stack overflow when recursive generic signatures from Create addons are inspected during recipe discovery.",
     "0.2.4": "Adds deterministic equal-priority recipe rotation and Create Sifter compatibility.",
     "0.2.5": "Adds tier-based factory parallelism, uncapped multiblock speed and energy cores, fan batch processing, and persistent machine contents when dismantled.",
-    "0.2.6": "Uses native Create fan timing, pauses fan progress when outputs are blocked, and sizes each fan batch to the four real output slots without losing items."
+    "0.2.6": "Uses native Create fan timing, pauses fan progress when outputs are blocked, and sizes each fan batch to the four real output slots without losing items.",
+    "0.2.7": "Preserves machine inventory, energy, and installed upgrades through every factory tier installation."
   },
   "1.21.1": {
     "0.2.0": "Adds expandable fluid multiblock factories, configurable item/fluid/energy ports, upgrade cores, dynamic GUIs, and complete JEI integration.",
@@ -16,12 +17,13 @@
     "0.2.3": "Fixes a stack overflow when recursive generic signatures from Create addons are inspected during recipe discovery.",
     "0.2.4": "Adds deterministic equal-priority recipe rotation and Create Sifter compatibility.",
     "0.2.5": "Adds tier-based factory parallelism, uncapped multiblock speed and energy cores, fan batch processing, and persistent machine contents when dismantled.",
-    "0.2.6": "Uses native Create fan timing, pauses fan progress when outputs are blocked, and sizes each fan batch to the four real output slots without losing items."
+    "0.2.6": "Uses native Create fan timing, pauses fan progress when outputs are blocked, and sizes each fan batch to the four real output slots without losing items.",
+    "0.2.7": "Preserves machine inventory, energy, and installed upgrades through every factory tier installation."
   },
   "promos": {
-    "1.20.1-latest": "0.2.6",
-    "1.20.1-recommended": "0.2.6",
-    "1.21.1-latest": "0.2.6",
-    "1.21.1-recommended": "0.2.6"
+    "1.20.1-latest": "0.2.7",
+    "1.20.1-recommended": "0.2.7",
+    "1.21.1-latest": "0.2.7",
+    "1.21.1-recommended": "0.2.7"
   }
 }
