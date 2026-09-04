@@ -692,29 +692,29 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         storedInputs.add(conditionSlot);
         storedInputs.addAll(inputSlots);
         List<IInventorySlot> storedOutputs = new ArrayList<>(outputSlots);
-        return new MachineUpgradeData(redstone, getControlType(), energyContainer,
-                new int[]{progress}, energySlot, storedInputs, storedOutputs, false, getComponents());
+        return new SimulationChamberUpgradeData(redstone, getControlType(), energyContainer,
+                new int[]{progress}, energySlot, storedInputs, storedOutputs, getComponents());
     }
 
     @Override
     public void parseUpgradeData(@NotNull IUpgradeData upgradeData) {
-        if (!(upgradeData instanceof MachineUpgradeData data)
-                || data.inputSlots.size() != INPUT_COUNT + 2
-                || data.outputSlots.size() != OUTPUT_COUNT) {
+        if (!(upgradeData instanceof SimulationChamberUpgradeData data)
+                || data.inputSlotData.size() != INPUT_COUNT + 2
+                || data.outputSlotData.size() != OUTPUT_COUNT) {
             super.parseUpgradeData(upgradeData);
             return;
         }
         redstone = data.redstone;
         setControlType(data.controlType);
-        energyContainer.setEnergy(data.energyContainer.getEnergy());
-        energySlot.deserializeNBT(data.energySlot.serializeNBT());
-        moduleSlot.deserializeNBT(data.inputSlots.get(0).serializeNBT());
-        conditionSlot.deserializeNBT(data.inputSlots.get(1).serializeNBT());
+        energyContainer.setEnergy(data.storedEnergy);
+        energySlot.deserializeNBT(data.energySlotData);
+        moduleSlot.deserializeNBT(data.inputSlotData.get(0));
+        conditionSlot.deserializeNBT(data.inputSlotData.get(1));
         for (int index = 0; index < INPUT_COUNT; index++) {
-            inputSlots.get(index).deserializeNBT(data.inputSlots.get(index + 2).serializeNBT());
+            inputSlots.get(index).deserializeNBT(data.inputSlotData.get(index + 2));
         }
         for (int index = 0; index < OUTPUT_COUNT; index++) {
-            outputSlots.get(index).deserializeNBT(data.outputSlots.get(index).serializeNBT());
+            outputSlots.get(index).deserializeNBT(data.outputSlotData.get(index));
         }
         for (ITileComponent component : getComponents()) {
             component.read(data.components);
