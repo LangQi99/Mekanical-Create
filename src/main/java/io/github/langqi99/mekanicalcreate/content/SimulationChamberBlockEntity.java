@@ -848,74 +848,63 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     @NotNull
     @Override
     public MachineUpgradeData getUpgradeData(HolderLookup.Provider provider) {
-        if (!supportsFluids()) {
-            List<IInventorySlot> storedInputs = new ArrayList<>(INPUT_COUNT + 2);
-            storedInputs.add(moduleSlot);
-            storedInputs.add(conditionSlot);
-            storedInputs.addAll(inputSlots);
-            return new MachineUpgradeData(provider, redstone, getControlType(), energyContainer,
-                    new int[]{progress}, energySlot, storedInputs,
-                    new ArrayList<>(outputSlots), false, getComponents());
-        }
-        List<IInventorySlot> storedInputs = new ArrayList<>(INPUT_COUNT + 3);
+        List<IInventorySlot> storedInputs = new ArrayList<>(INPUT_COUNT + (supportsFluids() ? 3 : 2));
         storedInputs.add(moduleSlot);
         storedInputs.add(conditionSlot);
         storedInputs.addAll(inputSlots);
-        storedInputs.add(fluidContainerSlot);
+        if (supportsFluids()) {
+            storedInputs.add(fluidContainerSlot);
+        }
         List<IInventorySlot> storedOutputs = new ArrayList<>(outputSlots);
-        storedOutputs.add(fluidContainerOutputSlot);
-        List<IExtendedFluidTank> storedFluids = new ArrayList<>(inputFluidTanks);
-        storedFluids.addAll(outputFluidTanks);
+        List<IExtendedFluidTank> storedFluids = new ArrayList<>();
+        if (supportsFluids()) {
+            storedOutputs.add(fluidContainerOutputSlot);
+            storedFluids.addAll(inputFluidTanks);
+            storedFluids.addAll(outputFluidTanks);
+        }
         return new SimulationChamberUpgradeData(provider, redstone, getControlType(), energyContainer,
                 new int[]{progress}, energySlot, storedInputs, storedOutputs, storedFluids, getComponents());
     }
 
     @Override
     public void parseUpgradeData(HolderLookup.Provider provider, @NotNull IUpgradeData upgradeData) {
-        if (!supportsFluids() && upgradeData instanceof MachineUpgradeData data
-                && data.inputSlots.size() == INPUT_COUNT + 2
-                && data.outputSlots.size() == OUTPUT_COUNT) {
-            restoreCommonUpgradeData(provider, data);
-            return;
-        }
         if (!(upgradeData instanceof SimulationChamberUpgradeData data)
-                || data.inputSlots.size() != INPUT_COUNT + 3
-                || data.outputSlots.size() != OUTPUT_COUNT + 1
-                || data.fluids.size() != INPUT_FLUID_TANK_COUNT + OUTPUT_FLUID_TANK_COUNT) {
+                || data.inputSlotData.size() != INPUT_COUNT + (supportsFluids() ? 3 : 2)
+                || data.outputSlotData.size() != OUTPUT_COUNT + (supportsFluids() ? 1 : 0)
+                || data.fluids.size() != (supportsFluids()
+                ? INPUT_FLUID_TANK_COUNT + OUTPUT_FLUID_TANK_COUNT : 0)) {
             super.parseUpgradeData(provider, upgradeData);
             return;
         }
         restoreCommonUpgradeData(provider, data);
-        fluidContainerSlot.deserializeNBT(provider,
-                data.inputSlots.get(INPUT_COUNT + 2).serializeNBT(provider));
-        fluidContainerOutputSlot.deserializeNBT(provider,
-                data.outputSlots.get(OUTPUT_COUNT).serializeNBT(provider));
-        List<IExtendedFluidTank> allFluidTanks = new ArrayList<>(inputFluidTanks);
-        allFluidTanks.addAll(outputFluidTanks);
-        for (int index = 0; index < allFluidTanks.size(); index++) {
-            allFluidTanks.get(index).setStackUnchecked(data.fluids.get(index).copy());
-        }
-        Level level = getLevel();
-        if (level != null && !level.isClientSide()) {
-            level.playSound(null, getBlockPos(), MekanismSounds.HYDRAULIC.get(),
-                    SoundSource.BLOCKS, 0.8F, 1.0F);
+        if (supportsFluids()) {
+            fluidContainerSlot.deserializeNBT(provider, data.inputSlotData.get(INPUT_COUNT + 2));
+            fluidContainerOutputSlot.deserializeNBT(provider, data.outputSlotData.get(OUTPUT_COUNT));
+            List<IExtendedFluidTank> allFluidTanks = new ArrayList<>(inputFluidTanks);
+            allFluidTanks.addAll(outputFluidTanks);
+            for (int index = 0; index < allFluidTanks.size(); index++) {
+                allFluidTanks.get(index).setStackUnchecked(data.fluids.get(index).copy());
+            }
+            Level level = getLevel();
+            if (level != null && !level.isClientSide()) {
+                level.playSound(null, getBlockPos(), MekanismSounds.HYDRAULIC.get(),
+                        SoundSource.BLOCKS, 0.8F, 1.0F);
+            }
         }
     }
 
-    private void restoreCommonUpgradeData(HolderLookup.Provider provider, MachineUpgradeData data) {
+    private void restoreCommonUpgradeData(HolderLookup.Provider provider, SimulationChamberUpgradeData data) {
         redstone = data.redstone;
         setControlType(data.controlType);
-        energyContainer.setEnergy(data.energyContainer.getEnergy());
-        energySlot.deserializeNBT(provider, data.energySlot.serializeNBT(provider));
-        moduleSlot.deserializeNBT(provider, data.inputSlots.get(0).serializeNBT(provider));
-        conditionSlot.deserializeNBT(provider, data.inputSlots.get(1).serializeNBT(provider));
+        energyContainer.setEnergy(data.storedEnergy);
+        energySlot.deserializeNBT(provider, data.energySlotData);
+        moduleSlot.deserializeNBT(provider, data.inputSlotData.get(0));
+        conditionSlot.deserializeNBT(provider, data.inputSlotData.get(1));
         for (int index = 0; index < INPUT_COUNT; index++) {
-            inputSlots.get(index).deserializeNBT(provider,
-                    data.inputSlots.get(index + 2).serializeNBT(provider));
+            inputSlots.get(index).deserializeNBT(provider, data.inputSlotData.get(index + 2));
         }
         for (int index = 0; index < OUTPUT_COUNT; index++) {
-            outputSlots.get(index).deserializeNBT(provider,
-                    data.outputSlots.get(index).serializeNBT(provider));
+            outputSlots.get(index).deserializeNBT(provider, data.outputSlotData.get(index));
         }
         for (ITileComponent component : getComponents()) {
             component.read(data.components, provider);
