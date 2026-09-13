@@ -1,100 +1,97 @@
 package io.github.langqi99.mekanicalcreate.content;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
 class FactorySpeedScheduleTest {
     @Test
-    void shortensRecipesUntilOneTick() {
-        assertEquals(100, FactorySpeedSchedule.adjustedDuration(100, 0));
-        assertEquals(20, FactorySpeedSchedule.adjustedDuration(100, 4));
-        assertEquals(1, FactorySpeedSchedule.adjustedDuration(1, 0));
-        assertFalse(FactorySpeedSchedule.overflowsIntoParallelism(1, 0));
+    void speedBeforeOneTickBoundaryDoesNotLoseRoundedWork() {
+        // 13 units per tick on a 100-unit recipe is 13 outputs in 100 ticks,
+        // not the old ceil(100 / 13) = 8 tick cadence (12 outputs).
+        assertEquals(13, outputsAfterTicks(100, 12, 100));
+        // Even a fully accelerated long recipe may still take over one tick.
+        assertEquals(63, outputsAfterTicks(200, 125, 100));
     }
 
     @Test
-    void convertsExcessSpeedIntoExactFractionalParallelism() {
-        long remainder = 0;
-        FactorySpeedSchedule.OverflowBudget first =
-                FactorySpeedSchedule.overflowBudget(2, 2, remainder);
-        FactorySpeedSchedule.OverflowBudget second =
-                FactorySpeedSchedule.overflowBudget(2, 2, first.workRemainder());
-
-        assertTrue(FactorySpeedSchedule.overflowsIntoParallelism(2, 2));
-        assertEquals(1, first.operations());
-        assertEquals(4, first.workRemainder());
-        assertEquals(2, second.operations());
-        assertEquals(0, second.workRemainder());
+    void crossingOneTickBoundaryPreservesExpectedOutputRate() {
+        assertEquals(100, outputsAfterTicks(100, 99, 100));
+        assertEquals(101, outputsAfterTicks(100, 100, 100));
+        // A calculated 0.5 tick per recipe means two complete operations
+        // in one tick when inputs, energy and output space are available.
+        assertEquals(2, outputsAfterTicks(100, 199, 1));
+        assertEquals(10, outputsAfterTicks(100, 199, 5));
+        assertEquals(504, outputsAfterTicks(1, 125, 4));
+        assertEquals(0, outputsAfterTicks(100, 12, 7));
+        assertEquals(1, outputsAfterTicks(100, 12, 8));
     }
 
     @Test
-    void allPhysicallyPossibleSpeedCoresRemainEffective() {
-        assertEquals(8, FactorySpeedSchedule.adjustedDuration(100, 12));
-
-        long remainder = 0;
-        int operations = 0;
-        for (int tick = 0; tick < 4; tick++) {
-            FactorySpeedSchedule.OverflowBudget budget =
-                    FactorySpeedSchedule.overflowBudget(1, 125, remainder);
-            operations += budget.operations();
-            remainder = budget.workRemainder();
+    void allSupportedSpeedsMatchExactLongRunExpectation() {
+        for (int duration : new int[]{1, 2, 3, 7, 20, 100, 200}) {
+            for (int cores : new int[]{0, 1, 2, 12, 27, 99, 100, 125}) {
+                int ticks = 300;
+                assertEquals(ticks * (cores + 1) / duration,
+                        outputsAfterTicks(duration, cores, ticks),
+                        "duration=" + duration + ", cores=" + cores);
+            }
         }
-        assertEquals(504, operations);
-        assertEquals(0, remainder);
     }
 
     @Test
-    void oneHundredCoresMakeAHundredTickRecipeSlightlyFasterThanOnePerTick() {
-        assertEquals(1, FactorySpeedSchedule.adjustedDuration(100, 100));
-        assertTrue(FactorySpeedSchedule.overflowsIntoParallelism(100, 100));
-
-        long remainder = 0;
-        int operations = 0;
-        for (int tick = 0; tick < 100; tick++) {
-            FactorySpeedSchedule.OverflowBudget budget =
-                    FactorySpeedSchedule.overflowBudget(100, 100, remainder);
-            operations += budget.operations();
-            remainder = budget.workRemainder();
+    void unusedWorkCanContinueIntoNextRecipeOfDifferentDuration() {
+        long remaining = FactorySpeedSchedule.workPerTick(16);
+        for (int duration : new int[]{1, 2, 1}) {
+            long work = FactorySpeedSchedule.workToAdvance(
+                    FactorySpeedSchedule.workPerOperation(duration), 0, remaining);
+            remaining -= work;
         }
-        assertEquals(101, operations);
-        assertEquals(0, remainder);
-    }
-
-    @Test
-    void everyParallelOperationPaysAWholeRecipesEnergy() {
-        assertEquals(2_000L, FactorySpeedSchedule.operationEnergy(20, 100));
-        assertEquals(1L, FactorySpeedSchedule.operationEnergy(0, 1));
-        assertEquals(Long.MAX_VALUE,
-                FactorySpeedSchedule.operationEnergy(Long.MAX_VALUE, 2));
-        assertEquals(2_020L, FactorySpeedSchedule.scaledEnergyPerTick(20, 100));
-        assertEquals(Long.MAX_VALUE,
-                FactorySpeedSchedule.scaledEnergyPerTick(Long.MAX_VALUE, 100));
-    }
-
-    @Test
-    void oneTickBudgetCanPayRoundRobinRecipesWithDifferentDurations() {
-        long work = FactorySpeedSchedule.availableWork(16, 0);
-        work -= FactorySpeedSchedule.workPerOperation(1);
-        work -= FactorySpeedSchedule.workPerOperation(2);
-        work -= FactorySpeedSchedule.workPerOperation(1);
-
-        assertEquals(52L, work);
-        assertEquals(120L, FactorySpeedSchedule.availableWork(16, work));
+        assertEquals(52L, remaining);
         assertEquals(8L, FactorySpeedSchedule.workPerOperation(2));
     }
 
     @Test
-    void carriesFractionalWorkIntoALongerRoundRobinRecipe() {
-        long remainder = FactorySpeedSchedule.availableWork(1, 0)
-                - FactorySpeedSchedule.workPerOperation(1);
-        assertEquals(4L, remainder);
+    void blockedOperationsDoNotBankUnusedTickWork() {
+        long operation = FactorySpeedSchedule.workPerOperation(10);
+        long accumulated = FactorySpeedSchedule.workPerTick(2);
+        assertEquals(12, accumulated);
+        // Output blockage retains only paid partial progress. On unblock,
+        // there is exactly one tick's new budget, not a saved burst.
+        assertEquals(12, FactorySpeedSchedule.workToAdvance(operation,
+                accumulated, FactorySpeedSchedule.workPerTick(2)));
+        assertEquals(4, FactorySpeedSchedule.workToAdvance(operation,
+                36, FactorySpeedSchedule.workPerTick(2)));
+    }
 
-        long nextTickWork = FactorySpeedSchedule.availableWork(1, remainder);
-        assertEquals(12L, nextTickWork);
-        assertEquals(12L, FactorySpeedSchedule.workPerOperation(3));
-        assertEquals(0L, nextTickWork - FactorySpeedSchedule.workPerOperation(3));
+    @Test
+    void energyIsChargedForExactlyTheWorkActuallyPerformed() {
+        assertEquals(2_000L, FactorySpeedSchedule.operationEnergy(20, 100));
+        assertEquals(180L, FactorySpeedSchedule.operationEnergy(20, 9));
+        assertEquals(1L, FactorySpeedSchedule.operationEnergy(0, 1));
+        assertEquals(Long.MAX_VALUE,
+                FactorySpeedSchedule.operationEnergy(Long.MAX_VALUE, 2));
+        assertEquals(2_020L, FactorySpeedSchedule.scaledEnergyPerTick(20, 100));
+    }
+
+    private static int outputsAfterTicks(int duration, int speedCores, int ticks) {
+        long operationWork = FactorySpeedSchedule.workPerOperation(duration);
+        long accumulated = 0;
+        int outputs = 0;
+        for (int tick = 0; tick < ticks; tick++) {
+            long budget = FactorySpeedSchedule.workPerTick(speedCores);
+            while (budget > 0) {
+                long advanced = FactorySpeedSchedule.workToAdvance(
+                        operationWork, accumulated, budget);
+                accumulated += advanced;
+                budget -= advanced;
+                if (accumulated != operationWork) {
+                    break;
+                }
+                outputs++;
+                accumulated = 0;
+            }
+        }
+        return outputs;
     }
 }
