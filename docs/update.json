@@ -18,12 +18,13 @@
     "0.2.4": "Adds deterministic equal-priority recipe rotation and Create Sifter compatibility.",
     "0.2.5": "Adds tier-based factory parallelism, uncapped multiblock speed and energy cores, fan batch processing, and persistent machine contents when dismantled.",
     "0.2.6": "Uses native Create fan timing, pauses fan progress when outputs are blocked, and sizes each fan batch to the four real output slots without losing items.",
-    "0.2.7": "Preserves machine inventory, energy, and installed upgrades through every factory tier installation."
+    "0.2.7": "Preserves machine inventory, energy, and installed upgrades through every factory tier installation.",
+    "0.2.8": "Preserves exact multiblock factory throughput across the one-tick boundary and completes multiple recipes per tick when speed cores provide enough work."
   },
   "promos": {
     "1.20.1-latest": "0.2.7",
     "1.20.1-recommended": "0.2.7",
-    "1.21.1-latest": "0.2.7",
-    "1.21.1-recommended": "0.2.7"
+    "1.21.1-latest": "0.2.8",
+    "1.21.1-recommended": "0.2.8"
   }
 }

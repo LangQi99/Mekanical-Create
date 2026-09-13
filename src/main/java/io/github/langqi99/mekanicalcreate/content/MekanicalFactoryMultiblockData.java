@@ -106,7 +106,9 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
     private final RecipeLookupThrottle lookupThrottle = new RecipeLookupThrottle();
     private final RecipeRoundRobinState fallbackRoundRobinState = new RecipeRoundRobinState();
     private boolean repeatEligible;
-    private long overflowWorkRemainder;
+    // Fixed-point work already paid for on the currently selected operation.
+    // Unlike a rounded integer duration, this preserves speed between ticks.
+    private long workProgress;
     @Nullable
     private ExecutionPlan activePlan;
     @Nullable
@@ -278,151 +280,94 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
             }
             fanCompletionPlan = null;
             progress = 0;
-            duration = getAdjustedDuration(activePlan.duration());
+            duration = Math.max(1, activePlan.duration());
         }
-        if (overflowWorkRemainder > 0
-                || FactorySpeedSchedule.overflowsIntoParallelism(
-                activePlan.duration(), speedCoreCount)) {
-            return tickOverflowingPlan(level, needsPacket);
-        }
-        if (parallelProgressPulse) {
-            parallelProgressPulse = false;
-            needsPacket = true;
-        }
-        overflowWorkRemainder = 0;
-        long energyPerTick = getEnergyPerTick();
-        if (energyContainer.extract(energyPerTick, Action.SIMULATE,
-                AutomationType.INTERNAL) != energyPerTick) {
-            return setInactive(needsPacket, true);
-        }
-        boolean finishing = progress + 1 >= duration;
-        ExecutionPlan executionPlan = fanCompletionPlan != null
-                ? fanCompletionPlan : activePlan;
-        if (FanProcessingPolicy.shouldSnapshotAtCompletion(
-                activePlan.isFanProcessing(), finishing,
-                fanCompletionPlan != null)) {
-            executionPlan = SimulationRecipeResolver.resolveFanCompletion(
-                    level, activeCatalystSlots(), inputSlots, outputContents(), true,
-                    roundRobinState()).orElse(null);
-            if (executionPlan == null) {
-                invalidatePlan();
-                return setInactive(true, false);
-            }
-            // Snapshot exactly once at the end of the bar. Output blockage
-            // must not reroll probability results or absorb later inputs.
-            fanCompletionPlan = executionPlan;
-        }
-        if (!canFit(executionPlan.itemResults(), executionPlan.fluidResults())) {
-            progress = FanProcessingPolicy.progressAfterOutputBlock(
-                    activePlan.isFanProcessing(), progress);
-            return setInactive(needsPacket, false);
-        }
-
-        energyContainer.extract(energyPerTick, Action.EXECUTE, AutomationType.INTERNAL);
-        needsPacket |= !active || energyStarved;
-        active = true;
-        energyStarved = false;
-        progress++;
-        if (progress >= duration) {
-            if (!executionPlan.stillValid(inputSlots, activeInputFluidTanks())
-                    || !canFit(executionPlan.itemResults(), executionPlan.fluidResults())) {
-                invalidatePlan();
-                return setInactive(true, false);
-            }
-            ExecutionPlan completedPlan = executionPlan;
-            completedPlan.consume(inputSlots, activeInputFluidTanks());
-            insertResults(completedPlan.itemResults());
-            insertFluidResults(completedPlan.fluidResults());
-            advanceRoundRobin(completedPlan);
-            activePlan = null;
-            fanCompletionPlan = null;
-            progress = 0;
-            duration = DEFAULT_DURATION;
-            planDirty = true;
-            repeatPlan = completedPlan;
-            repeatEligible = true;
-            lookupThrottle.clear();
-            markDirty();
-            needsPacket = true;
-        }
-        return needsPacket;
+        return tickWorkBudgetPlan(level, needsPacket);
     }
 
     /**
-     * Once speed cores reduce a recipe below one game tick, execute the excess
-     * work as whole, independently validated operations. The fixed-point
-     * remainder preserves fractional rates without ever accumulating blocked
-     * whole operations into a later burst.
+     * Use the same exact work budget both before and after the one-tick
+     * boundary. A cycle may finish halfway through a tick and spend the
+     * remaining work on the next recipe, without rounding away speed or
+     * banking blocked work for a later burst.
      */
-    private boolean tickOverflowingPlan(Level level, boolean needsPacket) {
-        long availableWork = FactorySpeedSchedule.availableWork(
-                speedCoreCount, overflowWorkRemainder);
-        overflowWorkRemainder = 0;
+    private boolean tickWorkBudgetPlan(Level level, boolean needsPacket) {
+        long availableWork = FactorySpeedSchedule.workPerTick(speedCoreCount);
+        long accumulatedWork = workProgress;
+        workProgress = 0;
 
         boolean completedAny = false;
+        boolean didWork = false;
         boolean starved = false;
         int operations = 0;
         while (operations < MAX_OVERFLOW_OPERATIONS_PER_TICK) {
             ExecutionPlan timingPlan = activePlan;
             if (timingPlan == null) {
-                // There is no operation to receive the remaining work. Do not
-                // bank it for material inserted in a later tick.
-                availableWork = 0;
                 break;
             }
             long operationWork = FactorySpeedSchedule.workPerOperation(timingPlan.duration());
-            if (availableWork < operationWork) {
-                // This is genuine fractional progress toward the already
-                // selected next operation, including when a round-robin peer
-                // has a different recipe duration.
-                overflowWorkRemainder = availableWork;
+            long wantedWork = FactorySpeedSchedule.workToAdvance(
+                    operationWork, accumulatedWork, availableWork);
+            if (wantedWork == 0) {
+                workProgress = accumulatedWork;
                 break;
             }
-            long operationEnergy = FactorySpeedSchedule.operationEnergy(
-                    timingPlan.energyPerTick(), timingPlan.duration());
-            if (energyContainer.extract(operationEnergy, Action.SIMULATE,
-                    AutomationType.INTERNAL) != operationEnergy) {
+            long baseEnergy = Math.max(1, timingPlan.energyPerTick());
+            long affordableWork = Math.min(wantedWork,
+                    (energyContainer.getEnergy() / baseEnergy) * 4L);
+            if (affordableWork == 0) {
                 starved = true;
-                overflowWorkRemainder = availableWork % operationWork;
+                workProgress = accumulatedWork;
                 break;
             }
+            boolean finishing = accumulatedWork + affordableWork >= operationWork;
             ExecutionPlan plan = fanCompletionPlan != null
                     ? fanCompletionPlan : timingPlan;
             if (FanProcessingPolicy.shouldSnapshotAtCompletion(
-                    timingPlan.isFanProcessing(), true,
+                    timingPlan.isFanProcessing(), finishing,
                     fanCompletionPlan != null)) {
                 plan = SimulationRecipeResolver.resolveFanCompletion(
                         level, activeCatalystSlots(), inputSlots, outputContents(), true,
                         roundRobinState()).orElse(null);
                 if (plan == null) {
                     invalidatePlan();
-                    availableWork = 0;
                     break;
                 }
                 fanCompletionPlan = plan;
             }
             if (!plan.stillValid(inputSlots, activeInputFluidTanks())) {
                 invalidatePlan();
-                availableWork = 0;
                 break;
             }
             if (!canFit(plan.itemResults(), plan.fluidResults())) {
-                // Preserve only sub-operation work. Whole blocked operations
-                // are deliberately discarded so unblocking cannot cause a
-                // delayed burst.
-                overflowWorkRemainder = availableWork % operationWork;
+                // A blocked fan batch retries from the beginning; ordinary
+                // recipes retain paid partial progress, but not unused speed.
+                workProgress = timingPlan.isFanProcessing() ? 0 : accumulatedWork;
+                progress = (int) (workProgress / 4L);
                 break;
             }
 
-            energyContainer.extract(operationEnergy, Action.EXECUTE,
+            long energyCost = FactorySpeedSchedule.operationEnergy(
+                    baseEnergy, affordableWork / 4L);
+            energyContainer.extract(energyCost, Action.EXECUTE,
                     AutomationType.INTERNAL);
+            didWork = true;
+            availableWork -= affordableWork;
+            accumulatedWork += affordableWork;
+            if (!finishing) {
+                workProgress = accumulatedWork;
+                progress = (int) (accumulatedWork / 4L);
+                starved = affordableWork < wantedWork;
+                break;
+            }
+
             plan.consume(inputSlots, activeInputFluidTanks());
             insertResults(plan.itemResults());
             insertFluidResults(plan.fluidResults());
             advanceRoundRobin(plan);
             completedAny = true;
             operations++;
-            availableWork -= operationWork;
+            accumulatedWork = 0;
             fanCompletionPlan = null;
 
             ExecutionPlan nextPlan = plan.repeat(level, inputSlots,
@@ -438,7 +383,7 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
             repeatPlan = nextPlan == null ? plan : null;
             repeatEligible = nextPlan == null;
             duration = nextPlan == null
-                    ? DEFAULT_DURATION : getAdjustedDuration(nextPlan.duration());
+                    ? DEFAULT_DURATION : Math.max(1, nextPlan.duration());
             // Internal consumption notifies the input listener. The plan above
             // was resolved from the resulting inventory, so it is already clean.
             lookupThrottle.clear();
@@ -446,16 +391,13 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
                 planDirty = false;
             }
             if (nextPlan == null) {
-                availableWork = 0;
                 break;
             }
         }
 
         if (operations >= MAX_OVERFLOW_OPERATIONS_PER_TICK && activePlan != null) {
-            // Corrupt third-party core counts must not turn unused whole work
-            // into an ever-growing burst on the following tick.
-            overflowWorkRemainder = availableWork
-                    % FactorySpeedSchedule.workPerOperation(activePlan.duration());
+            // The cap is a defensive guard, not stored extra production.
+            workProgress = accumulatedWork;
         }
 
         if (completedAny) {
@@ -466,7 +408,7 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
             parallelProgressPulse = completedAny;
             needsPacket = true;
         }
-        boolean nowActive = completedAny;
+        boolean nowActive = didWork;
         if (active != nowActive || energyStarved != starved) {
             needsPacket = true;
         }
@@ -483,17 +425,7 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
             active = false;
             energyStarved = false;
             parallelProgressPulse = false;
-            overflowWorkRemainder = 0;
-            return true;
-        }
-        return needsPacket;
-    }
-
-    private boolean setInactive(boolean needsPacket, boolean starved) {
-        if (active || energyStarved != starved || parallelProgressPulse) {
-            active = false;
-            energyStarved = starved;
-            parallelProgressPulse = false;
+            workProgress = 0;
             return true;
         }
         return needsPacket;
@@ -508,7 +440,7 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
         progress = 0;
         duration = DEFAULT_DURATION;
         parallelProgressPulse = false;
-        overflowWorkRemainder = 0;
+        workProgress = 0;
     }
 
     private void onInputsChanged() {
@@ -726,9 +658,8 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
     void setUpgradeCoreCounts(int speedCores, int energyCores, int fluidCores,
                               int catalystCores) {
         int newSpeedCoreCount = Math.max(0, speedCores);
-        if (speedCoreCount != newSpeedCoreCount) {
-            overflowWorkRemainder = 0;
-        }
+        // Work already spent on an in-flight recipe remains valid when the
+        // structure changes speed; only future ticks use the new core count.
         speedCoreCount = newSpeedCoreCount;
         energyCoreCount = Math.max(0, energyCores);
         fluidCoreCount = Math.min(MAX_FLUID_CORES, Math.max(0, fluidCores));
@@ -745,10 +676,6 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
 
     public boolean isEnergyStarved() {
         return energyStarved;
-    }
-
-    private int getAdjustedDuration(int recipeDuration) {
-        return FactorySpeedSchedule.adjustedDuration(recipeDuration, speedCoreCount);
     }
 
     private List<IExtendedFluidTank> activeInputFluidTanks() {
