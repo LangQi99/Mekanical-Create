@@ -74,5 +74,9 @@
   "jei.mekanicalcreate.process.compacting": "动力压块",
   "jei.mekanicalcreate.process.filling": "注液",
   "jei.mekanicalcreate.process.emptying": "排液",
-  "jei.mekanicalcreate.process.native_item_charging": "物品充电"
+  "jei.mekanicalcreate.process.native_item_charging": "物品充电",
+  "jei.mekanicalcreate.preparing": "正在准备工厂配方（%s）",
+  "jei.mekanicalcreate.registering": "正在加载工厂配方：%s / %s",
+  "jei.mekanicalcreate.ready": "工厂配方已就绪",
+  "jei.mekanicalcreate.loading_failed": "工厂配方准备失败，请查看游戏日志"
 }

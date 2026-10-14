@@ -46,9 +46,9 @@ public final class MekanicalCreate {
         }
         // RecipeManager is reused across /reload, so discard all discovered
         // addon bindings and resolver catalogs after an actual server reload.
-        CreateFamilyRecipeDiscovery.clearCache();
-        SimulationRecipeResolver.clearCache();
-        SimulationRecipeResolver.prewarm(event.getPlayerList().getServer().overworld());
+        var level = event.getPlayerList().getServer().overworld();
+        SimulationRecipeResolver.clearCache(level.getRecipeManager());
+        SimulationRecipeResolver.prewarm(level);
     }
 
     private void registerCommands(RegisterCommandsEvent event) {

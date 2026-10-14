@@ -74,5 +74,9 @@
   "jei.mekanicalcreate.process.compacting": "Compacting",
   "jei.mekanicalcreate.process.filling": "Filling",
   "jei.mekanicalcreate.process.emptying": "Emptying",
-  "jei.mekanicalcreate.process.native_item_charging": "Item Charging"
+  "jei.mekanicalcreate.process.native_item_charging": "Item Charging",
+  "jei.mekanicalcreate.preparing": "Preparing factory recipes (%s)",
+  "jei.mekanicalcreate.registering": "Loading factory recipes: %s / %s",
+  "jei.mekanicalcreate.ready": "Factory recipes are ready",
+  "jei.mekanicalcreate.loading_failed": "Factory recipes could not be prepared; see the game log"
 }

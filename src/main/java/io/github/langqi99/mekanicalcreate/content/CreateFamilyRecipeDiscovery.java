@@ -54,6 +54,10 @@ public final class CreateFamilyRecipeDiscovery {
         CACHE.clear();
     }
 
+    public static synchronized void clearCache(RecipeManager manager) {
+        CACHE.remove(manager);
+    }
+
     static List<DynamicModuleProfile> profiles(Level level) {
         RecipeManager manager = level.getRecipeManager();
         synchronized (CreateFamilyRecipeDiscovery.class) {

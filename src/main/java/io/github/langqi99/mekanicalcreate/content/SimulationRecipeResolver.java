@@ -1,5 +1,6 @@
 package io.github.langqi99.mekanicalcreate.content;
 
+import com.google.common.base.Suppliers;
 import com.simibubi.create.AllBlocks;
 import com.simibubi.create.AllRecipeTypes;
 import com.simibubi.create.content.kinetics.crusher.CrushingRecipe;
@@ -20,6 +21,7 @@ import com.simibubi.create.content.processing.sequenced.SequencedAssemblyRecipe;
 import com.simibubi.create.content.processing.sequenced.SequencedRecipe;
 import com.simibubi.create.foundation.recipe.RecipeApplier;
 import io.github.langqi99.mekanicalcreate.MekanicalCreate;
+import it.unimi.dsi.fastutil.objects.Object2IntOpenCustomHashMap;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -27,6 +29,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +40,7 @@ import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.BiFunction;
+import java.util.function.Supplier;
 import mekanism.api.Action;
 import mekanism.api.AutomationType;
 import mekanism.api.inventory.IInventorySlot;
@@ -48,6 +52,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemStackLinkedSet;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.AbstractCookingRecipe;
 import net.minecraft.world.item.crafting.CraftingInput;
@@ -91,7 +96,22 @@ public final class SimulationRecipeResolver {
         CANDIDATE_CACHE.clear();
         RESOLUTION_CACHE.clear();
         CreateSifterCompat.clearCache();
+        SimulationDisplayRecipeCatalog.invalidateAll();
         cacheEpoch++;
+    }
+
+    public static synchronized void clearCache(RecipeManager manager) {
+        invalidateRecipeData(manager);
+        SimulationDisplayRecipeCatalog.invalidate(manager);
+        cacheEpoch++;
+    }
+
+    /** Client display reloads must not invalidate integrated-server machine plans. */
+    static synchronized void invalidateRecipeData(RecipeManager manager) {
+        CANDIDATE_CACHE.remove(manager);
+        RESOLUTION_CACHE.remove(manager);
+        CreateSifterCompat.clearCache(manager);
+        CreateFamilyRecipeDiscovery.clearCache(manager);
     }
 
     static synchronized long cacheEpoch() {
@@ -141,7 +161,7 @@ public final class SimulationRecipeResolver {
     private static void prewarmCatalog(Level level, ItemStack module, ItemStack condition,
                                        boolean allowFluidProcessing) {
         try {
-            candidateCatalog(level, module, condition, allowFluidProcessing);
+            candidateCatalog(level, module, condition, allowFluidProcessing).index.get();
         } catch (LinkageError | RuntimeException exception) {
             MekanicalCreate.LOGGER.warn("Could not prewarm recipe catalog for {}",
                     BuiltInRegistries.ITEM.getKey(module.getItem()), exception);
@@ -647,11 +667,15 @@ public final class SimulationRecipeResolver {
         return true;
     }
 
-    private static List<ItemStack> distinctStacks(List<ItemStack> stacks) {
+    static List<ItemStack> distinctStacks(List<ItemStack> stacks) {
         List<ItemStack> distinct = new ArrayList<>();
+        // JEI charging recipes enumerate the entire item registry. Comparing
+        // each stack with every previous one makes large packs quadratic.
+        // Vanilla's strategy preserves item/component equality, ignores count,
+        // and keeps the first occurrence in the original order.
+        Set<ItemStack> seen = ItemStackLinkedSet.createTypeAndComponentsSet();
         for (ItemStack stack : stacks) {
-            if (distinct.stream().noneMatch(existing ->
-                    ItemStack.isSameItemSameComponents(existing, stack))) {
+            if (seen.add(stack)) {
                 distinct.add(stack.copyWithCount(1));
             }
         }
@@ -697,7 +721,17 @@ public final class SimulationRecipeResolver {
      * catalysts, while {@link DisplayInput#consumed()} controls pattern inputs.
      */
     public static List<DisplayRecipe> getDisplayRecipes(Level level, boolean allowFluidProcessing) {
-        List<DisplayRecipe> result = new ArrayList<>();
+        DisplayRecipes recipes = getDisplayRecipes(level);
+        return allowFluidProcessing ? recipes.fluidRecipes() : recipes.itemRecipes();
+    }
+
+    /** Shared, current-generation display directory for JEI and other consumers. */
+    public static DisplayRecipes getDisplayRecipes(Level level) {
+        return SimulationDisplayRecipeCatalog.getOrBuild(level).recipes();
+    }
+
+    private static List<DisplaySource> displaySources(Level level, boolean allowFluidProcessing) {
+        List<DisplaySource> result = new ArrayList<>();
         List<ItemStack> modules = new ArrayList<>(List.of(
                 AllBlocks.DEPLOYER.asStack(),
                 AllBlocks.MECHANICAL_PRESS.asStack(),
@@ -711,46 +745,34 @@ public final class SimulationRecipeResolver {
             modules.add(AllBlocks.ITEM_DRAIN.asStack());
         }
         for (ItemStack module : modules) {
-            appendDisplayRecipes(result, collectCandidates(level, module, ItemStack.EMPTY,
-                    allowFluidProcessing), module, ItemStack.EMPTY);
+            result.add(new DisplaySource(module, ItemStack.EMPTY, allowFluidProcessing, null));
         }
         ItemStack fan = AllBlocks.ENCASED_FAN.asStack();
         for (ItemStack condition : List.of(
                 new ItemStack(Items.WATER_BUCKET), new ItemStack(Items.SOUL_CAMPFIRE),
                 new ItemStack(Items.CAMPFIRE), new ItemStack(Items.LAVA_BUCKET))) {
-            appendDisplayRecipes(result, collectCandidates(level, fan, condition,
-                    allowFluidProcessing), fan, condition);
+            result.add(new DisplaySource(fan, condition, allowFluidProcessing, null));
         }
         for (ItemStack module : CreateSifterCompat.sifterModules()) {
             for (ItemStack mesh : CreateSifterCompat.meshes(level)) {
-                appendDisplayRecipes(result, collectCandidates(level, module, mesh,
-                        allowFluidProcessing), module, mesh);
+                result.add(new DisplaySource(module, mesh, allowFluidProcessing, null));
             }
         }
         for (CreateFamilyRecipeDiscovery.DynamicModuleProfile profile
                 : CreateFamilyRecipeDiscovery.profiles(level)) {
             if (CreateSifterCompat.isSifterModule(profile.module())) {
                 for (ItemStack mesh : CreateSifterCompat.meshes(level)) {
-                    appendDisplayRecipes(result, collectCandidates(level,
-                                    profile.module(), mesh, allowFluidProcessing),
-                            profile.module(), mesh);
+                    result.add(new DisplaySource(profile.module(), mesh, allowFluidProcessing, null));
                 }
                 continue;
             }
             if (profile.supports(allowFluidProcessing)) {
-                List<Candidate> candidates = new ArrayList<>(collectCandidates(
-                        level, profile.module(), ItemStack.EMPTY,
-                        allowFluidProcessing));
+                result.add(new DisplaySource(profile.module(), ItemStack.EMPTY,
+                        allowFluidProcessing, null));
                 if (profile.chargesItems()) {
-                    addNativeItemChargingCandidates(candidates, level,
-                            profile.module(), BuiltInRegistries.ITEM.stream()
-                                    .map(item -> item.getDefaultInstance())
-                                    .filter(stack -> !stack.isEmpty())
-                                    .toList());
+                    result.add(new DisplaySource(profile.module(), ItemStack.EMPTY,
+                            allowFluidProcessing, profile.moduleId()));
                 }
-                appendDisplayRecipes(result,
-                        candidates,
-                        profile.module(), ItemStack.EMPTY);
             }
         }
         return List.copyOf(result);
@@ -771,82 +793,221 @@ public final class SimulationRecipeResolver {
             if (charge == null) {
                 continue;
             }
-            ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(input.getItem());
-            String suffix = "native_item_charging_"
-                    + profile.get().moduleId().getNamespace() + "_"
-                    + profile.get().moduleId().getPath().replace('/', '_');
-            Requirement requirement = new Requirement(Ingredient.of(input.getItem()),
-                    1, true, 0, input.copyWithCount(1));
-            target.add(new Candidate(derivedId(itemId, suffix),
-                    "native_item_charging", List.of(requirement), List.of(),
-                    List.of(new DisplayOutput(charge.output(), 1)), List.of(),
-                    0, 1, 1, 60, charge.duration(),
-                    (recipeLevel, match) -> List.of(charge.output().copy()),
-                    charge.energyPerTick()));
+            target.add(nativeChargingCandidate(input, profile.get().moduleId(), charge));
         }
+    }
+
+    private static Candidate nativeChargingCandidate(ItemStack input,
+            ResourceLocation moduleId, EnergyChargePlan charge) {
+        ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(input.getItem());
+        String suffix = "native_item_charging_" + moduleId.getNamespace() + "_"
+                + moduleId.getPath().replace('/', '_');
+        Requirement requirement = new Requirement(Ingredient.of(input.getItem()),
+                1, true, 0, input.copyWithCount(1));
+        return new Candidate(derivedId(itemId, suffix),
+                "native_item_charging", List.of(requirement), List.of(),
+                List.of(new DisplayOutput(charge.output(), 1)), List.of(),
+                0, 1, 1, 60, charge.duration(),
+                (recipeLevel, match) -> List.of(charge.output().copy()),
+                charge.energyPerTick());
     }
 
     @Nullable
     private static EnergyChargePlan energyChargePlan(ItemStack source,
                                                      long requestedRate) {
-        ItemStack output = source.copyWithCount(1);
-        IEnergyStorage storage = output.getCapability(Capabilities.EnergyStorage.ITEM);
-        if (storage == null || !storage.canReceive()) {
-            return null;
-        }
-        int stored = storage.getEnergyStored();
-        int maximum = storage.getMaxEnergyStored();
-        if (maximum <= stored) {
-            return null;
-        }
-        int request = (int) Math.min(Integer.MAX_VALUE, Math.max(1, requestedRate));
-        int acceptedPerTick = storage.receiveEnergy(request, true);
-        if (acceptedPerTick <= 0) {
-            return null;
-        }
-        long missing = (long) maximum - stored;
-        long requiredTicks = 1L + (missing - 1L) / acceptedPerTick;
-        if (requiredTicks > MAX_NATIVE_CHARGING_DURATION) {
-            return null;
-        }
-        int duration = (int) requiredTicks;
-        long received = 0;
-        for (int tick = 0; tick < duration; tick++) {
-            int accepted = storage.receiveEnergy(request, false);
-            if (accepted <= 0) {
-                break;
-            }
-            received += accepted;
-        }
-        if (received <= 0) {
-            return null;
-        }
-        int actualDuration = (int) Math.min(Integer.MAX_VALUE,
-                1L + (received - 1L) / acceptedPerTick);
-        long energyPerTick = 1L + (received - 1L) / actualDuration;
-        return new EnergyChargePlan(output, actualDuration, energyPerTick);
+        EnergyChargeWork work = EnergyChargeWork.create(source, requestedRate);
+        if (work == null) return null;
+        work.advance(Long.MAX_VALUE);
+        return work.result();
     }
 
-    private static void appendDisplayRecipes(List<DisplayRecipe> target, List<Candidate> candidates,
-                                             ItemStack module, ItemStack condition) {
+    private static String displayVariant(ItemStack module, ItemStack condition) {
         ResourceLocation moduleId = BuiltInRegistries.ITEM.getKey(module.getItem());
         String variant = moduleId.getNamespace() + "_" + moduleId.getPath().replace('/', '_');
         if (!condition.isEmpty()) {
             ResourceLocation conditionId = BuiltInRegistries.ITEM.getKey(condition.getItem());
             variant += "_" + conditionId.getNamespace() + "_" + conditionId.getPath().replace('/', '_');
         }
-        for (Candidate candidate : candidates) {
-            ResourceLocation displayId = ResourceLocation.fromNamespaceAndPath(candidate.id.getNamespace(),
-                    candidate.id.getPath() + "/" + variant);
-            List<DisplayInput> inputs = mergeDisplayInputs(candidate.requirements);
-            String processKey = "jei.mekanicalcreate.process." + candidate.process;
-            target.add(new DisplayRecipe(displayId,
-                    Component.translatableWithFallback(processKey,
-                            humanize(candidate.process)),
-                    module, condition, inputs, candidate.displayOutputs,
-                    candidate.fluidRequirements.stream().map(FluidRequirement::ingredient).toList(),
-                    candidate.displayFluidOutputs(),
-                    candidate.sequenceSteps, candidate.loops));
+        return variant;
+    }
+
+    private static DisplayRecipe displayRecipe(Candidate candidate, ItemStack module,
+                                               ItemStack condition, String variant) {
+        ResourceLocation displayId = ResourceLocation.fromNamespaceAndPath(candidate.id.getNamespace(),
+                candidate.id.getPath() + "/" + variant);
+        List<DisplayInput> inputs = mergeDisplayInputs(candidate.requirements);
+        String processKey = "jei.mekanicalcreate.process." + candidate.process;
+        return new DisplayRecipe(displayId,
+                Component.translatableWithFallback(processKey, humanize(candidate.process)),
+                module, condition, inputs, candidate.displayOutputs,
+                candidate.fluidRequirements.stream().map(FluidRequirement::ingredient).toList(),
+                candidate.displayFluidOutputs(), candidate.sequenceSteps, candidate.loops);
+    }
+
+    private record DisplaySource(ItemStack module, ItemStack condition,
+                                 boolean fluid, @Nullable ResourceLocation chargingModule) {
+    }
+
+    /** Resumable display work; registry/capability calls stay on the owning game thread. */
+    public static final class DisplayRecipeBuild {
+        private final Level level;
+        private final List<DisplayRecipe> items = new ArrayList<>();
+        private final List<DisplayRecipe> fluids = new ArrayList<>();
+        private final Map<ResourceLocation, List<Candidate>> chargingCache = new HashMap<>();
+        private ArrayDeque<DisplaySource> sources;
+        private DisplaySource current;
+        private String variant;
+        private Iterator<Candidate> candidates;
+        private Iterator<Item> registryItems;
+        private Set<ItemStack> seen;
+        private List<Candidate> charging;
+        private long chargingRate;
+        private ItemStack chargingInput;
+        private EnergyChargeWork chargeWork;
+        private DisplayRecipes result;
+
+        DisplayRecipeBuild(Level level) {
+            this.level = level;
+        }
+
+        public boolean advance(long budgetNanos) {
+            if (result != null || budgetNanos <= 0) return result != null;
+            long deadline = System.nanoTime() + Math.min(budgetNanos, 1_000_000_000L);
+            if (sources == null) {
+                sources = new ArrayDeque<>(displaySources(level, false));
+                sources.addAll(displaySources(level, true));
+            }
+            while (System.nanoTime() < deadline) {
+                if (current == null) {
+                    current = sources.pollFirst();
+                    if (current == null) {
+                        result = new DisplayRecipes(items, fluids);
+                        return true;
+                    }
+                    variant = displayVariant(current.module, current.condition);
+                    candidates = current.chargingModule == null
+                            ? collectCandidates(level, current.module, current.condition, current.fluid).iterator()
+                            : chargingCache.getOrDefault(current.chargingModule, List.of()).iterator();
+                    if (current.chargingModule != null && !chargingCache.containsKey(current.chargingModule)) {
+                        candidates = null;
+                        registryItems = BuiltInRegistries.ITEM.iterator();
+                        seen = ItemStackLinkedSet.createTypeAndComponentsSet();
+                        charging = new ArrayList<>();
+                        chargingRate = NativeRecipeEnergy.itemChargingRate(current.module);
+                    }
+                }
+                if (candidates != null) {
+                    if (candidates.hasNext()) {
+                        append(candidates.next());
+                    } else {
+                        current = null;
+                    }
+                    continue;
+                }
+                if (chargeWork != null) {
+                    if (!chargeWork.advance(deadline)) return false;
+                    EnergyChargePlan charge = chargeWork.result();
+                    if (charge != null) {
+                        Candidate candidate = nativeChargingCandidate(chargingInput, current.chargingModule, charge);
+                        charging.add(candidate);
+                        append(candidate);
+                    }
+                    chargeWork = null;
+                    continue;
+                }
+                if (registryItems.hasNext()) {
+                    ItemStack stack = registryItems.next().getDefaultInstance();
+                    if (!stack.isEmpty() && seen.add(stack)) {
+                        chargingInput = stack.copyWithCount(1);
+                        chargeWork = EnergyChargeWork.create(chargingInput, chargingRate);
+                    }
+                } else {
+                    chargingCache.put(current.chargingModule, List.copyOf(charging));
+                    registryItems = null;
+                    seen = null;
+                    charging = null;
+                    current = null;
+                }
+            }
+            return false;
+        }
+
+        private void append(Candidate candidate) {
+            (current.fluid ? fluids : items).add(
+                    displayRecipe(candidate, current.module, current.condition, variant));
+        }
+
+        public int producedCount() {
+            return items.size() + fluids.size();
+        }
+
+        public DisplayRecipes result() {
+            if (result == null) throw new IllegalStateException("Display catalog is not ready");
+            return result;
+        }
+    }
+
+    /** Preserves stateful FE acceptance while allowing long simulations to yield. */
+    static final class EnergyChargeWork {
+        private final ItemStack output;
+        private final IEnergyStorage storage;
+        private final int request;
+        private final int acceptedPerTick;
+        private final int duration;
+        private int tick;
+        private long received;
+
+        private EnergyChargeWork(ItemStack output, IEnergyStorage storage,
+                int request, int acceptedPerTick, int duration) {
+            this.output = output;
+            this.storage = storage;
+            this.request = request;
+            this.acceptedPerTick = acceptedPerTick;
+            this.duration = duration;
+        }
+
+        @Nullable
+        static EnergyChargeWork create(ItemStack source, long requestedRate) {
+            ItemStack output = source.copyWithCount(1);
+            IEnergyStorage storage = output.getCapability(Capabilities.EnergyStorage.ITEM);
+            return storage == null ? null : fromStorage(output, storage, requestedRate);
+        }
+
+        @Nullable
+        static EnergyChargeWork fromStorage(ItemStack output, IEnergyStorage storage, long requestedRate) {
+            if (!storage.canReceive()) return null;
+            int stored = storage.getEnergyStored();
+            int maximum = storage.getMaxEnergyStored();
+            if (maximum <= stored) return null;
+            int request = (int) Math.min(Integer.MAX_VALUE, Math.max(1, requestedRate));
+            int accepted = storage.receiveEnergy(request, true);
+            if (accepted <= 0) return null;
+            long missing = (long) maximum - stored;
+            long ticks = 1L + (missing - 1L) / accepted;
+            return ticks > MAX_NATIVE_CHARGING_DURATION ? null
+                    : new EnergyChargeWork(output, storage, request, accepted, (int) ticks);
+        }
+
+        boolean advance(long deadline) {
+            while (tick < duration) {
+                if (deadline != Long.MAX_VALUE && (tick & 63) == 0 && System.nanoTime() >= deadline) return false;
+                int accepted = storage.receiveEnergy(request, false);
+                tick++;
+                if (accepted <= 0) {
+                    tick = duration;
+                    break;
+                }
+                received += accepted;
+            }
+            return true;
+        }
+
+        @Nullable
+        EnergyChargePlan result() {
+            if (tick < duration) throw new IllegalStateException("Charging simulation is not ready");
+            if (received <= 0) return null;
+            int actualDuration = (int) Math.min(Integer.MAX_VALUE, 1L + (received - 1L) / acceptedPerTick);
+            return new EnergyChargePlan(output, actualDuration, 1L + (received - 1L) / actualDuration);
         }
     }
 
@@ -892,24 +1053,35 @@ public final class SimulationRecipeResolver {
         return List.copyOf(merged);
     }
 
-    private static boolean sameIngredient(Ingredient first, Ingredient second) {
+    static boolean sameIngredient(Ingredient first, Ingredient second) {
+        if (first == second) {
+            return true;
+        }
         ItemStack[] firstItems = first.getItems();
         ItemStack[] secondItems = second.getItems();
         if (firstItems.length != secondItems.length) {
             return false;
         }
-        boolean[] matched = new boolean[secondItems.length];
-        for (ItemStack firstItem : firstItems) {
-            boolean found = false;
-            for (int index = 0; index < secondItems.length; index++) {
-                if (!matched[index]
-                        && ItemStack.isSameItemSameComponents(firstItem, secondItems[index])) {
-                    matched[index] = true;
-                    found = true;
-                    break;
-                }
+        // Most equal ingredients enumerate their options in the same order.
+        boolean sameOrder = true;
+        for (int index = 0; index < firstItems.length; index++) {
+            if (!ItemStack.isSameItemSameComponents(firstItems[index], secondItems[index])) {
+                sameOrder = false;
+                break;
             }
-            if (!found) {
+        }
+        if (sameOrder) {
+            return true;
+        }
+        // Preserve order-independent, component-aware multiset equality
+        // without scanning all previously matched options for every item.
+        Object2IntOpenCustomHashMap<ItemStack> counts = new Object2IntOpenCustomHashMap<>(
+                firstItems.length, ItemStackLinkedSet.TYPE_AND_TAG);
+        for (ItemStack stack : firstItems) {
+            counts.addTo(stack, 1);
+        }
+        for (ItemStack stack : secondItems) {
+            if (counts.addTo(stack, -1) <= 0) {
                 return false;
             }
         }
@@ -1471,7 +1643,7 @@ public final class SimulationRecipeResolver {
         if (candidate.fluidRequirements.isEmpty()) {
             return List.of();
         }
-        if (candidate.metadata.directFluidAllocation) {
+        if (candidate.metadata.get().directFluidAllocation) {
             DIAGNOSTICS.directFluidAllocations.increment();
             return allocateDisjointFluids(candidate, fluids, multiplier);
         }
@@ -1564,8 +1736,9 @@ public final class SimulationRecipeResolver {
                 catalystUses.add(new CatalystUse(slot, inventory.get(slot).copyWithCount(1)));
             }
         }
-        int[] consumedRequirementIndexes = candidate.metadata.consumedRequirements;
-        if (candidate.metadata.directItemAllocation) {
+        CandidateMetadata metadata = candidate.metadata.get();
+        int[] consumedRequirementIndexes = metadata.consumedRequirements;
+        if (metadata.directItemAllocation) {
             DIAGNOSTICS.directItemAllocations.increment();
             return allocateDisjoint(candidate, inventory, multiplier,
                     consumedRequirementIndexes, catalystUses);
@@ -1910,9 +2083,9 @@ public final class SimulationRecipeResolver {
     private record FluidRequirement(SizedFluidIngredient ingredient) {
     }
 
-    private record EnergyChargePlan(ItemStack output, int duration,
+    record EnergyChargePlan(ItemStack output, int duration,
                                     long energyPerTick) {
-        private EnergyChargePlan {
+        EnergyChargePlan {
             output = output.copyWithCount(1);
         }
     }
@@ -2082,7 +2255,8 @@ public final class SimulationRecipeResolver {
         }
     }
 
-    public record DiagnosticsSnapshot(long catalogBuilds, long fullSearches,
+    public record DiagnosticsSnapshot(long catalogBuilds, long indexBuilds, long metadataBuilds,
+                                      long fullSearches,
                                       long resolutionCacheHits, long resolutionCacheMisses,
                                       long candidatesConsidered, long quickRejects,
                                       long exactChecks, long directItemAllocations,
@@ -2091,7 +2265,8 @@ public final class SimulationRecipeResolver {
                                       long debounceDeferrals, long reloadDeferrals,
                                       long averageSearchMicros, long maxSearchMicros) {
         public String compactSummary() {
-            return "catalogs=" + catalogBuilds + ", searches=" + fullSearches
+            return "catalogs/indexes/metadata=" + catalogBuilds + "/" + indexBuilds
+                    + "/" + metadataBuilds + ", searches=" + fullSearches
                     + ", cache=" + resolutionCacheHits + "/" + resolutionCacheMisses
                     + ", candidates=" + candidatesConsidered + ", rejected=" + quickRejects
                     + ", exact=" + exactChecks + ", itemDirect/flow="
@@ -2105,6 +2280,8 @@ public final class SimulationRecipeResolver {
 
     private static final class ResolverDiagnostics {
         private final LongAdder catalogBuilds = new LongAdder();
+        private final LongAdder indexBuilds = new LongAdder();
+        private final LongAdder metadataBuilds = new LongAdder();
         private final LongAdder fullSearches = new LongAdder();
         private final LongAdder resolutionCacheHits = new LongAdder();
         private final LongAdder resolutionCacheMisses = new LongAdder();
@@ -2127,7 +2304,8 @@ public final class SimulationRecipeResolver {
         }
 
         private DiagnosticsSnapshot snapshot() {
-            return new DiagnosticsSnapshot(catalogBuilds.sum(), fullSearches.sum(),
+            return new DiagnosticsSnapshot(catalogBuilds.sum(), indexBuilds.sum(),
+                    metadataBuilds.sum(), fullSearches.sum(),
                     resolutionCacheHits.sum(), resolutionCacheMisses.sum(),
                     candidatesConsidered.sum(), quickRejects.sum(), exactChecks.sum(),
                     directItemAllocations.sum(), itemFlowAllocations.sum(),
@@ -2140,6 +2318,8 @@ public final class SimulationRecipeResolver {
 
         private void reset() {
             catalogBuilds.reset();
+            indexBuilds.reset();
+            metadataBuilds.reset();
             fullSearches.reset();
             resolutionCacheHits.reset();
             resolutionCacheMisses.reset();
@@ -2162,15 +2342,28 @@ public final class SimulationRecipeResolver {
                                      boolean allowFluidProcessing) {
     }
 
-    private record CandidateCatalog(List<Candidate> all,
-                                    Map<Item, List<Candidate>> byAnchorItem,
-                                    List<Candidate> unindexed) {
+    private record CandidateCatalog(List<Candidate> all, Supplier<CandidateIndex> index) {
         private static CandidateCatalog create(List<Candidate> candidates) {
             List<Candidate> all = List.copyOf(candidates);
+            // JEI needs the candidates, but not the machine's matching index.
+            // Build that index on first use; server reload prewarming still
+            // initializes it explicitly before machines start processing.
+            return new CandidateCatalog(all, Suppliers.memoize(() -> CandidateIndex.create(all)));
+        }
+
+        private List<Candidate> candidatesFor(List<ItemStack> inventory) {
+            return index.get().candidatesFor(inventory);
+        }
+    }
+
+    private record CandidateIndex(Map<Item, List<Candidate>> byAnchorItem,
+                                  List<Candidate> unindexed) {
+        private static CandidateIndex create(List<Candidate> all) {
+            DIAGNOSTICS.indexBuilds.increment();
             Map<Item, List<Candidate>> mutableIndex = new IdentityHashMap<>();
             List<Candidate> unindexed = new ArrayList<>();
             for (Candidate candidate : all) {
-                Set<Item> anchor = candidate.metadata.anchorItems;
+                Set<Item> anchor = candidate.metadata.get().anchorItems;
                 if (anchor == null || anchor.isEmpty()) {
                     unindexed.add(candidate);
                     continue;
@@ -2183,7 +2376,7 @@ public final class SimulationRecipeResolver {
             Map<Item, List<Candidate>> frozenIndex = new IdentityHashMap<>();
             mutableIndex.forEach((item, indexed) ->
                     frozenIndex.put(item, List.copyOf(indexed)));
-            return new CandidateCatalog(all, Collections.unmodifiableMap(frozenIndex),
+            return new CandidateIndex(Collections.unmodifiableMap(frozenIndex),
                     List.copyOf(unindexed));
         }
 
@@ -2209,7 +2402,7 @@ public final class SimulationRecipeResolver {
                              int sequenceSteps, int loops,
                              int complexity, int priority, int duration,
                              ResultFactory resultFactory, long energyPerTick,
-                             CandidateMetadata metadata) {
+                             Supplier<CandidateMetadata> metadata) {
         private Candidate(ResourceLocation id, String process, List<Requirement> requirements,
                           List<FluidRequirement> fluidRequirements,
                           List<DisplayOutput> displayOutputs, List<FluidStack> fluidOutputs,
@@ -2217,7 +2410,8 @@ public final class SimulationRecipeResolver {
                           int duration, ResultFactory resultFactory, long energyPerTick) {
             this(id, process, requirements, fluidRequirements, displayOutputs, fluidOutputs,
                     sequenceSteps, loops, complexity, priority, duration, resultFactory,
-                    energyPerTick, CandidateMetadata.compile(requirements, fluidRequirements));
+                    energyPerTick, Suppliers.memoize(() ->
+                            CandidateMetadata.compile(requirements, fluidRequirements)));
         }
 
         private Candidate(ResourceLocation id, String process, List<Requirement> requirements,
@@ -2243,11 +2437,11 @@ public final class SimulationRecipeResolver {
         }
 
         int consumedPerRun() {
-            return metadata.consumedPerRun;
+            return metadata.get().consumedPerRun;
         }
 
         int fluidConsumedPerRun() {
-            return metadata.fluidConsumedPerRun;
+            return metadata.get().fluidConsumedPerRun;
         }
 
         List<FluidStack> displayFluidOutputs() {
@@ -2276,6 +2470,7 @@ public final class SimulationRecipeResolver {
 
         private static CandidateMetadata compile(List<Requirement> requirements,
                                                  List<FluidRequirement> fluids) {
+            DIAGNOSTICS.metadataBuilds.increment();
             int consumed = 0;
             List<Integer> consumedIndexes = new ArrayList<>();
             List<RequirementDomain> consumedDomains = new ArrayList<>();
@@ -2408,6 +2603,13 @@ public final class SimulationRecipeResolver {
     public record DisplayFluidOutput(FluidStack stack) {
         public DisplayFluidOutput {
             stack = stack.copy();
+        }
+    }
+
+    public record DisplayRecipes(List<DisplayRecipe> itemRecipes, List<DisplayRecipe> fluidRecipes) {
+        public DisplayRecipes {
+            itemRecipes = List.copyOf(itemRecipes);
+            fluidRecipes = List.copyOf(fluidRecipes);
         }
     }
 

@@ -41,6 +41,10 @@ final class CreateSifterCompat {
         CACHE.clear();
     }
 
+    static synchronized void clearCache(RecipeManager manager) {
+        CACHE.remove(manager);
+    }
+
     static boolean isSifterModule(ItemStack stack) {
         ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
         return isSifterModuleId(id.getNamespace(), id.getPath());
