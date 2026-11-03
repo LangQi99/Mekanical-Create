@@ -12,6 +12,11 @@
         "particle": "mekanicalcreate:block/factory/mekanical_factory_front"
       }
     },
-    "front_led": { "parent": "mekanism:block/factory/front_led/basic" }
+    "front_led": {
+      "parent": "mekanism:block/factory/front_led/basic"
+    },
+    "shaft_hub": {
+      "parent": "mekanicalcreate:block/machine_shaft_hub"
+    }
   }
 }

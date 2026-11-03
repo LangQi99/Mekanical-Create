@@ -9,11 +9,14 @@ import io.github.langqi99.mekanicalcreate.content.SimulationRecipeResolver;
 import io.github.langqi99.mekanicalcreate.registry.ModBlockEntities;
 import io.github.langqi99.mekanicalcreate.registry.ModBlocks;
 import io.github.langqi99.mekanicalcreate.registry.ModItems;
+import io.github.langqi99.mekanicalcreate.registry.ModStress;
 import io.github.langqi99.mekanicalcreate.registry.ModMenus;
 import mekanism.common.lib.multiblock.MultiblockManager;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.OnDatapackSyncEvent;
@@ -28,11 +31,13 @@ public final class MekanicalCreate {
             new MultiblockManager<>("mekanicalFactory", MekanicalFactoryMultiblockCache::new,
                     MekanicalFactoryValidator::new);
 
-    public MekanicalCreate(IEventBus modBus) {
+    public MekanicalCreate(IEventBus modBus, ModContainer modContainer) {
+        modContainer.registerConfig(ModConfig.Type.COMMON, MekanicalConfig.SPEC);
         ModBlocks.register(modBus);
         ModBlockEntities.register(modBus);
         ModMenus.register(modBus);
         ModItems.register(modBus);
+        ModStress.register(modBus);
         NeoForge.EVENT_BUS.addListener(this::onDatapackSync);
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
     }

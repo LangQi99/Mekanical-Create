@@ -78,5 +78,12 @@
   "jei.mekanicalcreate.preparing": "正在准备工厂配方（%s）",
   "jei.mekanicalcreate.registering": "正在加载工厂配方：%s / %s",
   "jei.mekanicalcreate.ready": "工厂配方已就绪",
-  "jei.mekanicalcreate.loading_failed": "工厂配方准备失败，请查看游戏日志"
+  "jei.mekanicalcreate.loading_failed": "工厂配方准备失败，请查看游戏日志",
+  "block.mekanicalcreate.mekanical_factory_stress_port": "通用传动接口",
+  "gui.mekanicalcreate.stress_interface.title": "通用传动接口",
+  "gui.mekanicalcreate.stress_interface.values": "需要应力 %s / 实际应力 %s",
+  "gui.mekanicalcreate.stress_interface.starved": "显然，当前工厂网络应力不足",
+  "gui.mekanicalcreate.stress_interface.overclocked": "当前工厂网络应力超频运转，效率大幅提升",
+  "gui.mekanicalcreate.stress_interface.normal": "当前工厂网络应力稳定",
+  "gui.mekanicalcreate.stress_interface.rpm": "转速 %s RPM / 效率 %s%%"
 }

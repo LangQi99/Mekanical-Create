@@ -7,6 +7,7 @@ import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryCasingBlockEnt
 import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryControllerBlockEntity;
 import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryPortBlockEntity;
 import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryUpgradeCoreBlockEntity;
+import io.github.langqi99.mekanicalcreate.content.BlockMekanicalMachine;
 import io.github.langqi99.mekanicalcreate.content.SimulationChamberBlockEntity;
 import io.github.langqi99.mekanicalcreate.content.ModBlockShapes;
 import mekanism.api.tier.BaseTier;
@@ -55,7 +56,7 @@ public final class ModBlocks {
             BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>,
             ItemBlockTooltip<BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>>> SIMULATION_CHAMBER =
             BLOCKS.register("simulation_chamber",
-                    () -> new BlockTile<>(SIMULATION_CHAMBER_TYPE, properties -> properties.mapColor(MapColor.METAL)),
+                    () -> (BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>) new BlockMekanicalMachine<>(SIMULATION_CHAMBER_TYPE, properties -> properties.mapColor(MapColor.METAL)),
                     (block, properties) -> new ItemBlockTooltip<>(block, true, properties
                             .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
                             .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))
@@ -186,7 +187,7 @@ public final class ModBlocks {
             BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>,
             ItemBlockTooltip<BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>>> BASIC_MEKANICAL_FACTORY =
             BLOCKS.register("basic_mekanical_factory",
-                    () -> new BlockTile<>(BASIC_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
+                    () -> (BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>) new BlockMekanicalMachine<>(BASIC_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
                     (block, properties) -> new ItemBlockTooltip<>(block, true, properties
                             .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
                             .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))
@@ -208,7 +209,7 @@ public final class ModBlocks {
             BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>,
             ItemBlockTooltip<BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>>> ADVANCED_MEKANICAL_FACTORY =
             BLOCKS.register("advanced_mekanical_factory",
-                    () -> new BlockTile<>(ADVANCED_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
+                    () -> (BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>) new BlockMekanicalMachine<>(ADVANCED_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
                     (block, properties) -> new ItemBlockTooltip<>(block, true, properties
                             .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
                             .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))
@@ -230,7 +231,7 @@ public final class ModBlocks {
             BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>,
             ItemBlockTooltip<BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>>> ELITE_MEKANICAL_FACTORY =
             BLOCKS.register("elite_mekanical_factory",
-                    () -> new BlockTile<>(ELITE_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
+                    () -> (BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>) new BlockMekanicalMachine<>(ELITE_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
                     (block, properties) -> new ItemBlockTooltip<>(block, true, properties
                             .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
                             .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))
@@ -251,7 +252,7 @@ public final class ModBlocks {
             BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>,
             ItemBlockTooltip<BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>>> ULTIMATE_MEKANICAL_FACTORY =
             BLOCKS.register("ultimate_mekanical_factory",
-                    () -> new BlockTile<>(ULTIMATE_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
+                    () -> (BlockTile<SimulationChamberBlockEntity, Machine<SimulationChamberBlockEntity>>) new BlockMekanicalMachine<>(ULTIMATE_MEKANICAL_FACTORY_TYPE, properties -> properties.mapColor(MapColor.METAL)),
                     (block, properties) -> new ItemBlockTooltip<>(block, true, properties
                             .component(MekanismDataComponents.EJECTOR, AttachedEjector.DEFAULT)
                             .component(MekanismDataComponents.SIDE_CONFIG, AttachedSideConfig.EXTRA_MACHINE)))

@@ -12,6 +12,7 @@
     "mekanicalcreate:basic_mekanical_factory",
     "mekanicalcreate:advanced_mekanical_factory",
     "mekanicalcreate:elite_mekanical_factory",
-    "mekanicalcreate:ultimate_mekanical_factory"
+    "mekanicalcreate:ultimate_mekanical_factory",
+    "mekanicalcreate:mekanical_factory_stress_port"
   ]
 }

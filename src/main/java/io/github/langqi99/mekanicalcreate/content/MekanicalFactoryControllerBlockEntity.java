@@ -1,5 +1,6 @@
 package io.github.langqi99.mekanicalcreate.content;
 
+import io.github.langqi99.mekanicalcreate.MekanicalConfig;
 import io.github.langqi99.mekanicalcreate.registry.ModBlocks;
 import java.util.List;
 import mekanism.api.energy.IEnergyContainer;
@@ -7,6 +8,7 @@ import mekanism.api.fluid.IExtendedFluidTank;
 import mekanism.api.inventory.IInventorySlot;
 import mekanism.common.inventory.slot.InputInventorySlot;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class MekanicalFactoryControllerBlockEntity extends MekanicalFactoryBlockEntity {
@@ -81,5 +83,41 @@ public final class MekanicalFactoryControllerBlockEntity extends MekanicalFactor
 
     public boolean isEnergyStarved() {
         return getMultiblock().isEnergyStarved();
+    }
+
+    @Override
+    protected boolean onUpdateServer() {
+        boolean sendUpdate = super.onUpdateServer();
+        if (getLevel() != null && !getLevel().isClientSide && getMultiblock() != null) {
+            getMultiblock().setStressSatisfied(scanStressPort());
+        }
+        return sendUpdate;
+    }
+
+    /** True when a bound stress port is present and its shaft is turning. */
+    private boolean scanStressPort() {
+        if (!MekanicalConfig.stressRequirementEnabled()) {
+            return true;
+        }
+        if (getLevel() == null) {
+            return false;
+        }
+        for (Direction side : Direction.values()) {
+            if (getLevel().getBlockEntity(getBlockPos().relative(side))
+                    instanceof FactoryStressPortBlockEntity port
+                   ) {
+                return port.isSupplied();
+            }
+        }
+        return false;
+    }
+
+    /** Stress the formed factory needs, in Create SU. */
+    public long requiredStressSu() {
+        return getMultiblock().requiredStressSu();
+    }
+
+    public boolean isStressSatisfied() {
+        return getMultiblock().isStressSatisfied();
     }
 }

@@ -1,5 +1,6 @@
 package io.github.langqi99.mekanicalcreate.content;
 
+import io.github.langqi99.mekanicalcreate.MekanicalConfig;
 import io.github.langqi99.mekanicalcreate.content.SimulationRecipeResolver.ExecutionPlan;
 import io.github.langqi99.mekanicalcreate.registry.ModBlocks;
 import java.util.ArrayList;
@@ -94,6 +95,8 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
     private boolean parallelProgressPulse;
     @ContainerSync
     private int speedCoreCount;
+    /** Set by the controller each tick from the attached stress port. */
+    private boolean stressSatisfied = true;
     @ContainerSync
     private int energyCoreCount;
     @ContainerSync
@@ -549,6 +552,36 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
                 ? BASE_ENERGY_PER_TICK
                 : activePlan.energyPerTick();
         return FactorySpeedSchedule.scaledEnergyPerTick(base, getSpeedCoreCount());
+    }
+
+    /**
+     * Stress the formed structure needs. Every block of the cuboid pays the
+     * same rate; speed cores multiply both throughput and stress, while energy
+     * cores only add buffer capacity (mirroring their effect on FE/t).
+     */
+    public long requiredStressSu() {
+        if (!MekanicalConfig.stressRequirementEnabled()) {
+            return 0;
+        }
+        var bounds = getBounds();
+        if (bounds == null || !isFormed()) {
+            return 0;
+        }
+        int volume = bounds.length() * bounds.width() * bounds.height();
+        return StressDemand.withSpeedCores(StressDemand.fluidFactorySu(volume),
+                getSpeedCoreCount());
+    }
+
+    /** Kinetic state published by the attached factory stress port. */
+    public boolean isStressSatisfied() {
+        if (!MekanicalConfig.stressRequirementEnabled()) {
+            return true;
+        }
+        return stressSatisfied;
+    }
+
+    public void setStressSatisfied(boolean satisfied) {
+        stressSatisfied = satisfied;
     }
 
     public List<InputInventorySlot> getInputSlots() {
