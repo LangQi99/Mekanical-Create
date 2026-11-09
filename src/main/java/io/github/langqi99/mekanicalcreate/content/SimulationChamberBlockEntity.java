@@ -49,6 +49,7 @@ import mekanism.common.util.MekanismUtils;
 import mekanism.common.upgrade.IUpgradeData;
 import mekanism.common.upgrade.MachineUpgradeData;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -65,7 +66,7 @@ import net.neoforged.neoforge.fluids.FluidType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine implements IBoundingBlock {
+public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine implements IBoundingBlock, KineticMachine {
     public static final int INPUT_COUNT = 16;
     public static final int OUTPUT_COUNT = 4;
     public static final int INPUT_FLUID_TANK_COUNT = 2;
@@ -97,6 +98,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     private final RecipeLookupThrottle lookupThrottle = new RecipeLookupThrottle();
     private final RecipeRoundRobinState roundRobinState = new RecipeRoundRobinState();
     private final List<LaneState> lanes = new ArrayList<>();
+    private final MachineShaft shaft = new MachineShaft(this);
 
     public SimulationChamberBlockEntity(BlockPos pos, BlockState state) {
         this(ModBlocks.SIMULATION_CHAMBER, pos, state);
@@ -283,7 +285,9 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     @Override
     protected boolean onUpdateServer() {
         boolean sendUpdatePacket = super.onUpdateServer();
+        shaft.tick();
         energySlot.fillContainerOrConvert();
+        shaft.charge(energyContainer);
         if (supportsFluids()) {
             fluidContainerSlot.handleContainer(fluidContainerOutputSlot);
         }
@@ -297,7 +301,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         }
 
         ensureLaneCount();
-
         long recipeEpoch = SimulationRecipeResolver.cacheEpoch();
         if (observedRecipeEpoch != recipeEpoch) {
             observedRecipeEpoch = recipeEpoch;
@@ -820,17 +823,73 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     }
 
     @Override
+    public MachineShaft shaft() {
+        return shaft;
+    }
+
+    @Override
+    public void setLevel(Level level) {
+        super.setLevel(level);
+        shaft.setLevel(level);
+    }
+
+    @Override
+    public void setBlockState(BlockState state) {
+        shaft.updateBlockState(state);
+        super.setBlockState(state);
+    }
+
+    @Override
+    public void onChunkUnloaded() {
+        shaft.onChunkUnloaded();
+        super.onChunkUnloaded();
+    }
+
+    @Override
+    public void setRemoved() {
+        shaft.setRemoved();
+        super.setRemoved();
+    }
+
+    @Override
+    public void clearRemoved() {
+        super.clearRemoved();
+        shaft.clearRemoved();
+    }
+
+    @Override
+    protected void onUpdateClient() {
+        super.onUpdateClient();
+        shaft.tick();
+    }
+
+    @Override
+    public CompoundTag getReducedUpdateTag(HolderLookup.Provider provider) {
+        CompoundTag tag = super.getReducedUpdateTag(provider);
+        shaft.saveToMachine(tag, provider, true);
+        return tag;
+    }
+
+    @Override
+    public void handleUpdateTag(CompoundTag tag, HolderLookup.Provider provider) {
+        super.handleUpdateTag(tag, provider);
+        shaft.loadFromMachine(tag, provider, true);
+    }
+
+    @Override
     public void saveAdditional(CompoundTag tag, HolderLookup.Provider provider) {
         super.saveAdditional(tag, provider);
         tag.putInt("Progress", progress);
         tag.putInt("Duration", duration);
         RecipeRoundRobinNbt.write(tag, roundRobinState);
+        shaft.saveToMachine(tag, provider, false);
     }
 
     @Override
     public void loadAdditional(CompoundTag tag, HolderLookup.Provider provider) {
         super.loadAdditional(tag, provider);
         RecipeRoundRobinNbt.read(tag, roundRobinState);
+        shaft.loadFromMachine(tag, provider, false);
         // Active plans are deliberately ephemeral. Re-resolve after a reload so a
         // datapack recipe change can never finish an old operation.
         progress = 0;

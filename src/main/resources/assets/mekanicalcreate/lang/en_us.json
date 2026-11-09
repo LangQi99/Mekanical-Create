@@ -77,6 +77,13 @@
   "jei.mekanicalcreate.process.native_item_charging": "Item Charging",
   "jei.mekanicalcreate.preparing": "Preparing factory recipes (%s)",
   "jei.mekanicalcreate.registering": "Loading factory recipes: %s / %s",
-  "jei.mekanicalcreate.ready": "Factory recipes are ready",
-  "jei.mekanicalcreate.loading_failed": "Factory recipes could not be prepared; see the game log"
+  "jei.mekanicalcreate.loading_failed": "Factory recipes could not be prepared; see the game log",
+  "block.mekanicalcreate.mekanical_factory_stress_port": "Mekanical Stress Interface",
+  "gui.mekanicalcreate.shaft.generation": "Shaft generation: %s FE/t",
+  "gui.mekanicalcreate.stress_interface.title": "Mekanical Stress Interface",
+  "gui.mekanicalcreate.stress_interface.values": "Stress: %s / %s SU",
+  "gui.mekanicalcreate.stress_interface.starved": "Network overloaded",
+  "gui.mekanicalcreate.stress_interface.overclocked": "Stress reserve available",
+  "gui.mekanicalcreate.stress_interface.normal": "Network stable",
+  "gui.mekanicalcreate.stress_interface.rpm": "Speed: %s RPM"
 }

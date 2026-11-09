@@ -77,6 +77,13 @@
   "jei.mekanicalcreate.process.native_item_charging": "物品充电",
   "jei.mekanicalcreate.preparing": "正在准备工厂配方（%s）",
   "jei.mekanicalcreate.registering": "正在加载工厂配方：%s / %s",
-  "jei.mekanicalcreate.ready": "工厂配方已就绪",
-  "jei.mekanicalcreate.loading_failed": "工厂配方准备失败，请查看游戏日志"
+  "jei.mekanicalcreate.loading_failed": "工厂配方准备失败，请查看游戏日志",
+  "block.mekanicalcreate.mekanical_factory_stress_port": "通用传动接口",
+  "gui.mekanicalcreate.shaft.generation": "轴发电量：%s FE/t",
+  "gui.mekanicalcreate.stress_interface.title": "通用传动接口",
+  "gui.mekanicalcreate.stress_interface.values": "应力占用 %s / 容量 %s SU",
+  "gui.mekanicalcreate.stress_interface.starved": "传动网络过载",
+  "gui.mekanicalcreate.stress_interface.overclocked": "传动网络应力富余",
+  "gui.mekanicalcreate.stress_interface.normal": "传动网络稳定",
+  "gui.mekanicalcreate.stress_interface.rpm": "转速 %s RPM"
 }

@@ -1,0 +1,27 @@
+{
+  "variants": {
+    "facing=down": {
+      "model": "mekanicalcreate:block/mekanical_factory_stress_port",
+      "x": 90
+    },
+    "facing=up": {
+      "model": "mekanicalcreate:block/mekanical_factory_stress_port",
+      "x": 270
+    },
+    "facing=north": {
+      "model": "mekanicalcreate:block/mekanical_factory_stress_port"
+    },
+    "facing=south": {
+      "model": "mekanicalcreate:block/mekanical_factory_stress_port",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "mekanicalcreate:block/mekanical_factory_stress_port",
+      "y": 270
+    },
+    "facing=east": {
+      "model": "mekanicalcreate:block/mekanical_factory_stress_port",
+      "y": 90
+    }
+  }
+}

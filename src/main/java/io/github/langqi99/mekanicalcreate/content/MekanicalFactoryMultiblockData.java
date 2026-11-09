@@ -94,6 +94,8 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
     private boolean parallelProgressPulse;
     @ContainerSync
     private int speedCoreCount;
+    @Nullable
+    private BlockPos controllerPos;
     @ContainerSync
     private int energyCoreCount;
     @ContainerSync
@@ -232,6 +234,17 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
         energySlot.fillContainerOrConvert();
         fluidContainerSlot.handleContainer(fluidContainerOutputSlot);
 
+        MachineShaft shaft = controllerShaft(level);
+        if (shaft != null) {
+            shaft.charge(energyContainer);
+        }
+        if (!prepareWork(level)) {
+            return setIdle(needsPacket);
+        }
+        return tickWorkBudgetPlan(level, needsPacket);
+    }
+
+    private boolean prepareWork(Level level) {
         long recipeEpoch = SimulationRecipeResolver.cacheEpoch();
         if (observedRecipeEpoch != recipeEpoch) {
             observedRecipeEpoch = recipeEpoch;
@@ -252,7 +265,7 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
         }
         if (activePlan == null) {
             if (!planDirty) {
-                return setIdle(needsPacket);
+                return false;
             }
             if (lookupThrottle.shouldWait(level.getGameTime())) {
                 if (lookupThrottle.isExplicitWait(level.getGameTime())) {
@@ -260,7 +273,7 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
                 } else {
                     SimulationRecipeResolver.recordDebounceDeferral();
                 }
-                return setIdle(needsPacket);
+                return false;
             }
             if (repeatEligible && repeatPlan != null) {
                 activePlan = repeatPlan.repeat(level, inputSlots, activeInputFluidTanks())
@@ -276,13 +289,13 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
             planDirty = false;
             lookupThrottle.resolved();
             if (activePlan == null) {
-                return setIdle(needsPacket);
+                return false;
             }
             fanCompletionPlan = null;
             progress = 0;
             duration = Math.max(1, activePlan.duration());
         }
-        return tickWorkBudgetPlan(level, needsPacket);
+        return true;
     }
 
     /**
@@ -549,6 +562,19 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
                 ? BASE_ENERGY_PER_TICK
                 : activePlan.energyPerTick();
         return FactorySpeedSchedule.scaledEnergyPerTick(base, getSpeedCoreCount());
+    }
+
+    void setControllerPos(BlockPos controllerPos) {
+        this.controllerPos = controllerPos;
+    }
+
+    @Nullable
+    private MachineShaft controllerShaft(Level level) {
+        if (controllerPos != null && level.isLoaded(controllerPos)
+                && level.getBlockEntity(controllerPos) instanceof MekanicalFactoryControllerBlockEntity controller) {
+            return controller.shaft();
+        }
+        return null;
     }
 
     public List<InputInventorySlot> getInputSlots() {

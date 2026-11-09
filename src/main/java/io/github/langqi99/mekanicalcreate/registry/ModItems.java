@@ -16,6 +16,7 @@ public final class ModItems {
             .icon(() -> ModBlocks.SIMULATION_CHAMBER.asItem().getDefaultInstance())
             .displayItems((parameters, output) -> {
                 output.accept(ModBlocks.SIMULATION_CHAMBER.asItem());
+                output.accept(ModStress.STRESS_PORT_ITEM.get());
                 output.accept(ModBlocks.FLUID_MEKANICAL_FACTORY.asItem());
                 output.accept(ModBlocks.MEKANICAL_FACTORY_CASING.asItem());
                 output.accept(ModBlocks.MEKANICAL_FACTORY_PORT.asItem());
