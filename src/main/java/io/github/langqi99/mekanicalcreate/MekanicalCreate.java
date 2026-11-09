@@ -2,6 +2,7 @@ package io.github.langqi99.mekanicalcreate;
 
 import com.mojang.logging.LogUtils;
 import io.github.langqi99.mekanicalcreate.content.CreateFamilyRecipeDiscovery;
+import io.github.langqi99.mekanicalcreate.content.MachineShaftPlacement;
 import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryMultiblockData;
 import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryMultiblockCache;
 import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryValidator;
@@ -18,6 +19,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.OnDatapackSyncEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -38,6 +40,7 @@ public final class MekanicalCreate {
         ModMenus.register(modBus);
         ModItems.register(modBus);
         ModStress.register(modBus);
+        modBus.addListener((FMLCommonSetupEvent event) -> event.enqueueWork(MachineShaftPlacement::register));
         NeoForge.EVENT_BUS.addListener(this::onDatapackSync);
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
     }

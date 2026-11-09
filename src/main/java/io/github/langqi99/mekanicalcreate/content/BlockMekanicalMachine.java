@@ -32,9 +32,7 @@ public class BlockMekanicalMachine<TILE extends TileEntityMekanism, TYPE extends
     @Override
     protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos,
                                                Player player, InteractionHand hand, BlockHitResult hit) {
-        if (isPlacingShaft(stack, level, pos, state, hit.getDirection())) {
-            return ItemInteractionResult.SKIP_DEFAULT_BLOCK_INTERACTION;
-        }
-        return super.useItemOn(stack, state, level, pos, player, hand, hit);
+        ItemInteractionResult placement = MachineShaftPlacement.tryPlace(stack, state, level, pos, player, hand, hit);
+        return placement != null ? placement : super.useItemOn(stack, state, level, pos, player, hand, hit);
     }
 }

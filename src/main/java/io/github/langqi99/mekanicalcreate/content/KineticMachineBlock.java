@@ -1,10 +1,8 @@
 package io.github.langqi99.mekanicalcreate.content;
 
-import com.simibubi.create.AllBlocks;
 import com.simibubi.create.content.kinetics.base.IRotate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -24,9 +22,5 @@ public interface KineticMachineBlock extends IRotate {
     default boolean hasShaftTowards(LevelReader level, BlockPos pos, BlockState state, Direction side) {
         Direction face = shaftFace(state);
         return side == face || hasOppositeShaft() && side == face.getOpposite();
-    }
-
-    default boolean isPlacingShaft(ItemStack stack, LevelReader level, BlockPos pos, BlockState state, Direction face) {
-        return AllBlocks.SHAFT.isIn(stack) && hasShaftTowards(level, pos, state, face);
     }
 }

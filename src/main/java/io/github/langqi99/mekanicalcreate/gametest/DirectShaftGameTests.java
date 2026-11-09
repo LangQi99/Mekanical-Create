@@ -4,14 +4,17 @@ import com.simibubi.create.AllBlocks;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import com.simibubi.create.content.kinetics.motor.CreativeMotorBlockEntity;
 import io.github.langqi99.mekanicalcreate.MekanicalCreate;
+import io.github.langqi99.mekanicalcreate.content.MachineShaftPlacement;
 import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryControllerBlockEntity;
 import io.github.langqi99.mekanicalcreate.content.SimulationChamberBlockEntity;
 import io.github.langqi99.mekanicalcreate.registry.ModBlocks;
+import net.createmod.catnip.placement.PlacementHelpers;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
@@ -39,8 +42,7 @@ public final class DirectShaftGameTests {
         var player = helper.makeMockPlayer(GameType.CREATIVE);
         player.setItemInHand(InteractionHand.MAIN_HAND, AllBlocks.SHAFT.asStack());
         BlockPos absoluteMachine = helper.absolutePos(machinePos);
-        helper.useBlock(machinePos, player, new BlockHitResult(
-                absoluteMachine.getCenter().add(0.5, 0, 0), Direction.EAST, absoluteMachine, false));
+        helper.useBlock(machinePos, player, hitFace(absoluteMachine, Direction.EAST));
         BlockState placedShaft = helper.getBlockState(downstreamPos);
         helper.assertTrue(AllBlocks.SHAFT.has(placedShaft)
                         && placedShaft.getValue(BlockStateProperties.AXIS) == Direction.Axis.X,
@@ -70,6 +72,42 @@ public final class DirectShaftGameTests {
                             "The chamber did not pick up the new shaft axis");
                 })
                 .thenSucceed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 40)
+    public static void shaftPreviewMatchesPlacementAndRespectsTheSocket(GameTestHelper helper) {
+        BlockPos pos = new BlockPos(1, 1, 1);
+        BlockPos absolute = helper.absolutePos(pos);
+        BlockState machine = ModBlocks.SIMULATION_CHAMBER.get().defaultBlockState()
+                .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.EAST);
+        helper.setBlock(pos, machine);
+        helper.setBlock(pos.south(), AllBlocks.SHAFT.getDefaultState()
+                .setValue(BlockStateProperties.AXIS, Direction.Axis.Z));
+
+        Player player = helper.makeMockPlayer(GameType.CREATIVE);
+        ItemStack stack = AllBlocks.SHAFT.asStack();
+        player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+        var placement = PlacementHelpers.getHelpersView().stream()
+                .filter(h -> h instanceof MachineShaftPlacement && h.matchesItem(stack) && h.matchesState(machine))
+                .findFirst().orElseThrow(() -> new IllegalStateException("Machine helper missing from Create's preview list"));
+        BlockHitResult socket = hitFace(absolute, Direction.SOUTH);
+        var preview = placement.getOffset(player, helper.getLevel(), machine, absolute, socket, stack);
+        helper.assertTrue(preview.isSuccessful() && preview.hasGhostState()
+                        && preview.getBlockPos().equals(absolute.south(2)),
+                "The preview must extend the existing shaft on the clicked side");
+        BlockState ghost = preview.getTransform().apply(preview.getGhostState());
+        helper.assertTrue(AllBlocks.SHAFT.has(ghost) && ghost.getValue(BlockStateProperties.AXIS) == Direction.Axis.Z,
+                "The preview shaft did not align with the machine");
+
+        helper.useBlock(pos, player, socket);
+        helper.assertTrue(helper.getBlockState(pos.south(2)) == ghost,
+                "The actual placement did not match the preview");
+        helper.setBlock(pos.south(3), Blocks.STONE);
+        helper.assertTrue(!placement.getOffset(player, helper.getLevel(), machine, absolute, socket, stack).isSuccessful(),
+                "A blocked socket must not suggest placement on the opposite side");
+        helper.assertTrue(!placement.getOffset(player, helper.getLevel(), machine, absolute,
+                hitFace(absolute, Direction.EAST), stack).isSuccessful(), "A face without a socket showed a preview");
+        helper.succeed();
     }
 
     @GameTest(template = "empty", timeoutTicks = 55)
@@ -156,6 +194,10 @@ public final class DirectShaftGameTests {
                                 && controller.shaft().getSpeed() == 0,
                         "The fluid factory kept working after losing its shaft"))
                 .thenSucceed();
+    }
+
+    private static BlockHitResult hitFace(BlockPos pos, Direction face) {
+        return new BlockHitResult(pos.getCenter().relative(face, 0.5), face, pos, false);
     }
 
     private static BlockState motorFacing(Direction direction) {
