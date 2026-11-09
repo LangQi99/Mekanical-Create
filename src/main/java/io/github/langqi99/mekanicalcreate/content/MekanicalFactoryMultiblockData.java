@@ -95,8 +95,8 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
     private boolean parallelProgressPulse;
     @ContainerSync
     private int speedCoreCount;
-    /** Set by the controller each tick from the attached stress port. */
-    private boolean stressSatisfied = true;
+    @Nullable
+    private BlockPos controllerPos;
     @ContainerSync
     private int energyCoreCount;
     @ContainerSync
@@ -235,6 +235,28 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
         energySlot.fillContainerOrConvert();
         fluidContainerSlot.handleContainer(fluidContainerOutputSlot);
 
+        MachineShaft shaft = controllerShaft(level);
+        if (!prepareWork(level)) {
+            if (shaft != null) {
+                shaft.setDemand(0);
+            }
+            return setIdle(needsPacket);
+        }
+
+        if (shaft != null) {
+            shaft.setDemand(requiredStressSu());
+        }
+        if (MekanicalConfig.stressRequirementEnabled() && (shaft == null || !shaft.canRun())) {
+            boolean changed = active || energyStarved || parallelProgressPulse;
+            active = false;
+            energyStarved = false;
+            parallelProgressPulse = false;
+            return needsPacket || changed;
+        }
+        return tickWorkBudgetPlan(level, needsPacket);
+    }
+
+    private boolean prepareWork(Level level) {
         long recipeEpoch = SimulationRecipeResolver.cacheEpoch();
         if (observedRecipeEpoch != recipeEpoch) {
             observedRecipeEpoch = recipeEpoch;
@@ -255,7 +277,7 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
         }
         if (activePlan == null) {
             if (!planDirty) {
-                return setIdle(needsPacket);
+                return false;
             }
             if (lookupThrottle.shouldWait(level.getGameTime())) {
                 if (lookupThrottle.isExplicitWait(level.getGameTime())) {
@@ -263,7 +285,7 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
                 } else {
                     SimulationRecipeResolver.recordDebounceDeferral();
                 }
-                return setIdle(needsPacket);
+                return false;
             }
             if (repeatEligible && repeatPlan != null) {
                 activePlan = repeatPlan.repeat(level, inputSlots, activeInputFluidTanks())
@@ -279,13 +301,13 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
             planDirty = false;
             lookupThrottle.resolved();
             if (activePlan == null) {
-                return setIdle(needsPacket);
+                return false;
             }
             fanCompletionPlan = null;
             progress = 0;
             duration = Math.max(1, activePlan.duration());
         }
-        return tickWorkBudgetPlan(level, needsPacket);
+        return true;
     }
 
     /**
@@ -572,16 +594,17 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
                 getSpeedCoreCount());
     }
 
-    /** Kinetic state published by the attached factory stress port. */
-    public boolean isStressSatisfied() {
-        if (!MekanicalConfig.stressRequirementEnabled()) {
-            return true;
-        }
-        return stressSatisfied;
+    void setControllerPos(BlockPos controllerPos) {
+        this.controllerPos = controllerPos;
     }
 
-    public void setStressSatisfied(boolean satisfied) {
-        stressSatisfied = satisfied;
+    @Nullable
+    private MachineShaft controllerShaft(Level level) {
+        if (controllerPos != null && level.isLoaded(controllerPos)
+                && level.getBlockEntity(controllerPos) instanceof MekanicalFactoryControllerBlockEntity controller) {
+            return controller.shaft();
+        }
+        return null;
     }
 
     public List<InputInventorySlot> getInputSlots() {

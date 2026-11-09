@@ -1,0 +1,15 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "io.github.langqi99.mekanicalcreate.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "KineticNetworkMixin",
+    "KineticSourceMixin",
+    "KineticValidationMixin",
+    "RotationPropagatorMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

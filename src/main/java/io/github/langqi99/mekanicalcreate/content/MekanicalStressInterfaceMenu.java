@@ -84,7 +84,7 @@ public final class MekanicalStressInterfaceMenu extends AbstractContainerMenu {
 
     private long liveDemand() {
         FactoryStressPortBlockEntity port = tile();
-        return port == null ? demand : port.totalGroupDemand();
+        return port == null ? demand : port.networkStress();
     }
 
     private long liveCapacity() {

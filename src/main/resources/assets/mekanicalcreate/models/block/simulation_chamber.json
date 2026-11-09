@@ -14,9 +14,6 @@
     },
     "front_led": {
       "parent": "mekanicalcreate:block/factory/front_led/lowest"
-    },
-    "shaft_hub": {
-      "parent": "mekanicalcreate:block/machine_shaft_hub"
     }
   }
 }

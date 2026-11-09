@@ -19,7 +19,7 @@ public final class MekanicalFactoryValidator extends CuboidStructureValidator<Me
     private static final VoxelCuboid MIN_SIZE = new VoxelCuboid(3, 3, 3);
     private static final VoxelCuboid MAX_SIZE = new VoxelCuboid(7, 7, 7);
 
-    private boolean foundController;
+    private BlockPos controllerPos;
     private boolean foundPort;
     private int speedCores;
     private int energyCores;
@@ -35,12 +35,13 @@ public final class MekanicalFactoryValidator extends CuboidStructureValidator<Me
                                               BlockPos pos, BlockState state,
                                               CasingType type, boolean needsFrame) {
         BlockEntity tile = (BlockEntity) structure.getTile(pos);
-        boolean controller = tile instanceof MekanicalFactoryControllerBlockEntity;
-        if (foundController && controller) {
-            return FormationResult.fail(Component.translatable(
-                    "multiblock.mekanicalcreate.invalid.controller_conflict"), true);
+        if (tile instanceof MekanicalFactoryControllerBlockEntity) {
+            if (controllerPos != null) {
+                return FormationResult.fail(Component.translatable(
+                        "multiblock.mekanicalcreate.invalid.controller_conflict"), true);
+            }
+            controllerPos = pos.immutable();
         }
-        foundController |= controller;
         foundPort |= tile instanceof MekanicalFactoryPortBlockEntity;
         return super.validateFrame(context, pos, state, type, needsFrame);
     }
@@ -90,7 +91,7 @@ public final class MekanicalFactoryValidator extends CuboidStructureValidator<Me
     @Override
     public FormationResult postcheck(MekanicalFactoryMultiblockData data,
                                      Long2ObjectMap<ChunkAccess> chunkMap) {
-        if (!foundController) {
+        if (controllerPos == null) {
             return FormationResult.fail(Component.translatable(
                     "multiblock.mekanicalcreate.invalid.no_controller"));
         }
@@ -101,6 +102,7 @@ public final class MekanicalFactoryValidator extends CuboidStructureValidator<Me
         // Speed and energy cores have no artificial effect cap; the structure's
         // interior is their natural limit. Fluid and catalyst cores remain
         // effect-capped, but extra copies are still valid internal blocks.
+        data.setControllerPos(controllerPos);
         data.setUpgradeCoreCounts(speedCores, energyCores, fluidCores, catalystCores);
         return FormationResult.SUCCESS;
     }

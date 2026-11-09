@@ -2,6 +2,7 @@ package io.github.langqi99.mekanicalcreate.registry;
 
 import io.github.langqi99.mekanicalcreate.MekanicalCreate;
 import io.github.langqi99.mekanicalcreate.ModLang;
+import io.github.langqi99.mekanicalcreate.content.BlockMekanicalFactoryController;
 import io.github.langqi99.mekanicalcreate.content.BlockMekanicalFactoryPort;
 import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryCasingBlockEntity;
 import io.github.langqi99.mekanicalcreate.content.MekanicalFactoryControllerBlockEntity;
@@ -76,8 +77,7 @@ public final class ModBlocks {
             BlockBasicMultiblock<MekanicalFactoryControllerBlockEntity>,
             ItemBlockTooltip<BlockBasicMultiblock<MekanicalFactoryControllerBlockEntity>>> FLUID_MEKANICAL_FACTORY =
             BLOCKS.register("fluid_mekanical_factory",
-                    () -> new BlockBasicMultiblock<>(FLUID_MEKANICAL_FACTORY_TYPE,
-                            properties -> properties.mapColor(MapColor.METAL)),
+                    () -> new BlockMekanicalFactoryController(FLUID_MEKANICAL_FACTORY_TYPE),
                     (block, properties) -> new ItemBlockTooltip<>(block, true, properties));
 
     public static final BlockTypeTile<MekanicalFactoryCasingBlockEntity> MEKANICAL_FACTORY_CASING_TYPE =

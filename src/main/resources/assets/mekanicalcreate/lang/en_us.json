@@ -80,10 +80,11 @@
   "jei.mekanicalcreate.ready": "Factory recipes are ready",
   "jei.mekanicalcreate.loading_failed": "Factory recipes could not be prepared; see the game log",
   "block.mekanicalcreate.mekanical_factory_stress_port": "Mekanical Stress Interface",
+  "gui.mekanicalcreate.shaft.no_rotation": "Requires rotation (%s SU)",
   "gui.mekanicalcreate.stress_interface.title": "Mekanical Stress Interface",
-  "gui.mekanicalcreate.stress_interface.values": "Required stress %s / actual stress %s",
-  "gui.mekanicalcreate.stress_interface.starved": "Obviously, the factory network has insufficient stress",
-  "gui.mekanicalcreate.stress_interface.overclocked": "Factory network is overclocked - efficiency greatly increased",
-  "gui.mekanicalcreate.stress_interface.normal": "Factory network stress is stable",
-  "gui.mekanicalcreate.stress_interface.rpm": "Speed %s RPM / efficiency %s%%"
+  "gui.mekanicalcreate.stress_interface.values": "Stress: %s / %s SU",
+  "gui.mekanicalcreate.stress_interface.starved": "Network overloaded",
+  "gui.mekanicalcreate.stress_interface.overclocked": "Stress reserve available",
+  "gui.mekanicalcreate.stress_interface.normal": "Network stable",
+  "gui.mekanicalcreate.stress_interface.rpm": "Speed: %s RPM"
 }

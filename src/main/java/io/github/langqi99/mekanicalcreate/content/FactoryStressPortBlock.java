@@ -20,14 +20,7 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * 通用动力工厂应力接口 (factory stress port).
- *
- * <p>Mounted against the controller of a formed Mekanical Factory. The outward
- * face takes a Create shaft; the socket reports the multiblock's stress demand
- * to the network. Also accepted as a {@code VALVE} block by the structure
- * validator so it may sit in the factory wall.</p>
- */
+/** Inline network readout retained for worlds that placed the original stress interface. */
 public class FactoryStressPortBlock extends Block implements EntityBlock, IRotate {
     public static final DirectionProperty FACING = BlockStateProperties.FACING;
 
@@ -58,7 +51,7 @@ public class FactoryStressPortBlock extends Block implements EntityBlock, IRotat
 
     @Override
     public boolean hasShaftTowards(LevelReader level, BlockPos pos, BlockState state, Direction side) {
-        return side == state.getValue(FACING);
+        return side.getAxis() == state.getValue(FACING).getAxis();
     }
 
     @Override
@@ -84,7 +77,7 @@ public class FactoryStressPortBlock extends Block implements EntityBlock, IRotat
     @Nullable
     @Override
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
-        return new FactoryStressPortBlockEntity(ModStress.stressPortType(), pos, state);
+        return new FactoryStressPortBlockEntity(pos, state);
     }
 
     @Nullable
@@ -97,7 +90,6 @@ public class FactoryStressPortBlock extends Block implements EntityBlock, IRotat
         return (tickLevel, pos, tickState, blockEntity) -> {
             if (blockEntity instanceof FactoryStressPortBlockEntity port) {
                 port.tick();
-                port.serverTick();
             }
         };
     }

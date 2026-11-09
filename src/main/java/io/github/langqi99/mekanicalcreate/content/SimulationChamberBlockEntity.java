@@ -1,7 +1,6 @@
 package io.github.langqi99.mekanicalcreate.content;
 
 import com.simibubi.create.AllBlocks;
-import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import io.github.langqi99.mekanicalcreate.MekanicalConfig;
 import io.github.langqi99.mekanicalcreate.content.SimulationRecipeResolver.ExecutionPlan;
 import io.github.langqi99.mekanicalcreate.registry.ModBlocks;
@@ -68,7 +67,7 @@ import net.neoforged.neoforge.fluids.FluidType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine implements IBoundingBlock {
+public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine implements IBoundingBlock, KineticMachine {
     public static final int INPUT_COUNT = 16;
     public static final int OUTPUT_COUNT = 4;
     public static final int INPUT_FLUID_TANK_COUNT = 2;
@@ -95,11 +94,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     private int runningLaneCount;
     private boolean energyStarved;
     private boolean stressStarved;
-    /** How many machine blocks a relay line may span in one direction. */
-    private static final int MAX_RELAY_LENGTH = 48;
     private long syncedStressSupply;
-    /** Fractional work carried between ticks so RPM can scale the process rate. */
-    private double rotationCarry;
     private long syncedStressDemand;
     private boolean planDirty = true;
     private boolean schedulingNeeded = true;
@@ -107,6 +102,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     private final RecipeLookupThrottle lookupThrottle = new RecipeLookupThrottle();
     private final RecipeRoundRobinState roundRobinState = new RecipeRoundRobinState();
     private final List<LaneState> lanes = new ArrayList<>();
+    private final MachineShaft shaft = new MachineShaft(this);
 
     public SimulationChamberBlockEntity(BlockPos pos, BlockState state) {
         this(ModBlocks.SIMULATION_CHAMBER, pos, state);
@@ -293,6 +289,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     @Override
     protected boolean onUpdateServer() {
         boolean sendUpdatePacket = super.onUpdateServer();
+        shaft.tick();
         energySlot.fillContainerOrConvert();
         if (supportsFluids()) {
             fluidContainerSlot.handleContainer(fluidContainerOutputSlot);
@@ -300,6 +297,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
 
         Level level = getLevel();
         if (level == null || !canFunction()) {
+            shaft.setDemand(0);
             runningLaneCount = 0;
             energyStarved = false;
             stressStarved = false;
@@ -308,9 +306,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         }
 
         ensureLaneCount();
-        syncedStressDemand = requiredStressSu();
-        syncedStressSupply = stressSupplySu();
-
         long recipeEpoch = SimulationRecipeResolver.cacheEpoch();
         if (observedRecipeEpoch != recipeEpoch) {
             observedRecipeEpoch = recipeEpoch;
@@ -348,7 +343,16 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             }
         }
 
-        boolean didWork = processLanes();
+        syncedStressDemand = requiredStressSu();
+        boolean hasWork = lanes.stream().anyMatch(lane -> lane.plan != null);
+        shaft.setDemand(hasWork ? syncedStressDemand : 0);
+        syncedStressSupply = shaft.supplySu();
+        boolean didWork = hasWork && processLanes();
+        if (!hasWork) {
+            stressStarved = false;
+            energyStarved = false;
+            resetEnergyUsage();
+        }
         updateClientLaneState();
         setActive(didWork);
         if (didWork || activeLaneCount > 0 || waitedForLookup) {
@@ -476,7 +480,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         // Create stress gate. While the network is missing, not turning, or
         // overstressed, lanes freeze with their progress intact: no inputs are
         // consumed and no energy is drawn.
-        if (!isStressSatisfied()) {
+        if (!shaft.canRun()) {
             for (LaneState lane : lanes) {
                 if (lane.plan != null) {
                     lane.status = LaneStatus.STRESS_STARVED;
@@ -488,6 +492,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             return false;
         }
         stressStarved = false;
+        double workRate = shaft.workRate();
         OutputReservation outputReservation = new OutputReservation();
         List<LaneState> runnable = new ArrayList<>(lanes.size());
         long requestedEnergy = 0;
@@ -503,7 +508,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             // let one expensive lane prevent a later, cheaper independent lane
             // from using energy that is actually available.
             boolean hasEnergy = lane.energyPerTick <= availableEnergy;
-            boolean finishing = lane.progress + 1 >= lane.duration;
+            boolean finishing = lane.progress + (int) (lane.rotationCarry + workRate) >= lane.duration;
             ExecutionPlan executionPlan = lane.completionPlan != null
                     ? lane.completionPlan : lane.plan;
             if (hasEnergy && FanProcessingPolicy.shouldSnapshotAtCompletion(
@@ -556,14 +561,11 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                 continue;
             }
             energyContainer.extract(energy, Action.EXECUTE, AutomationType.INTERNAL);
-            rotationCarry += rotationFactor();
-            int steps = 0;
-            while (rotationCarry >= 1.0D && steps < 8) {
-                rotationCarry -= 1.0D;
-                steps++;
-            }
+            double work = lane.rotationCarry + workRate;
+            int steps = (int) work;
+            lane.rotationCarry = work - steps;
             lane.progress += steps;
-            didWork = steps > 0;
+            didWork = true;
             if (lane.progress < lane.duration) {
                 continue;
             }
@@ -722,7 +724,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         runningLaneCount = 0;
         energyStarved = false;
         stressStarved = false;
-        rotationCarry = 0.0D;
         resetEnergyUsage();
         if (getLevel() != null) {
             markForSave();
@@ -821,23 +822,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         return energyStarved;
     }
 
-    /**
-     * True when Mekanism is configured to take FE through this world-facing side.
-     * A shaft socket is refused there: the machine would otherwise try to
-     * receive energy and stress through the same face.
-     */
-    public boolean isEnergyInputSide(Direction worldSide) {
-        if (configComponent == null) {
-            return false;
-        }
-        try {
-            RelativeSide relative = RelativeSide.fromDirections(getDirection(), worldSide);
-            DataType type = configComponent.getDataType(TransmissionType.ENERGY, relative);
-            return type == DataType.INPUT || type == DataType.INPUT_OUTPUT;
-        } catch (RuntimeException | LinkageError unavailable) {
-            return false;
-        }
-    }
     public boolean isStressStarved() {
         return stressStarved;
     }
@@ -855,90 +839,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                 speedUpgrades, energyUpgrades);
     }
 
-    /** The interface that serves this machine group, or null when there is none. */
-    @Nullable
-    public FactoryStressPortBlockEntity findStressInterface() {
-        Level level = getLevel();
-        if (level == null) {
-            return null;
-        }
-        java.util.Set<BlockPos> visited = new java.util.HashSet<>();
-        java.util.ArrayDeque<BlockPos> queue = new java.util.ArrayDeque<>();
-        queue.add(getBlockPos());
-        visited.add(getBlockPos());
-        int machines = 0;
-        while (!queue.isEmpty() && machines < FactoryStressPortBlockEntity.MAX_GROUP_SIZE) {
-            BlockPos current = queue.poll();
-            for (Direction side : Direction.values()) {
-                BlockPos next = current.relative(side);
-                if (!visited.add(next) || !level.isLoaded(next)) {
-                    continue;
-                }
-                if (level.getBlockEntity(next) instanceof FactoryStressPortBlockEntity port) {
-                    return port;
-                }
-                if (level.getBlockEntity(next) instanceof SimulationChamberBlockEntity
-                        || level.getBlockEntity(next) instanceof MekanicalFactoryControllerBlockEntity) {
-                    machines++;
-                    queue.add(next);
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Stress this machine contributes to its group right now: full demand while
-     * it has work queued, zero when it is genuinely idle. This is what makes the
-     * interface only pay for machines that are actually doing something.
-     */
-    public long activeStressSu() {
-        for (LaneState lane : lanes) {
-            if (lane.plan != null) {
-                return requiredStressSu();
-            }
-        }
-        return 0L;
-    }
-
-    /**
-     * 只要有接口、且接口申报的整组需求不超过网络容量，就算有动力。
-     * 转速不参与这个判定——转速只影响效率（见 rotationFactor）。
-     */
-    public boolean isStressSatisfied() {
-        if (!MekanicalConfig.stressRequirementEnabled()) {
-            return true;
-        }
-        FactoryStressPortBlockEntity port = findStressInterface();
-        if (port == null) {
-            return false;
-        }
-        long need = port.groupDemand();
-        if (need <= 0L) {
-            return true;
-        }
-        return port.networkCapacity() >= need;
-    }
-
-    /** Stress capacity reachable through the group interface, in SU. */
-    public long stressSupplySu() {
-        FactoryStressPortBlockEntity port = findStressInterface();
-        if (port == null || !port.hasNetwork()) {
-            return 0L;
-        }
-        return (long) port.getOrCreateNetwork().calculateCapacity();
-    }
-
-    /** RPM to work-rate multiplier, taken from the interface shaft. */
-    private double rotationFactor() {
-        FactoryStressPortBlockEntity port = findStressInterface();
-        if (port == null) {
-            return 0.0D;
-        }
-        double factor = StressDemand.speedFactor(port.getSpeed());
-        // 超频：容量 >= 1.5x 需求时，整组机器效率翻倍
-        return port.isOverclocked() ? factor * 2.0D : factor;
-    }
     /** Client-side mirror of the reached stress capacity, for the GUI readout. */
     public long clientStressSupplySu() {
         return syncedStressSupply;
@@ -987,17 +887,73 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     }
 
     @Override
+    public MachineShaft shaft() {
+        return shaft;
+    }
+
+    @Override
+    public void setLevel(Level level) {
+        super.setLevel(level);
+        shaft.setLevel(level);
+    }
+
+    @Override
+    public void setBlockState(BlockState state) {
+        shaft.updateBlockState(state);
+        super.setBlockState(state);
+    }
+
+    @Override
+    public void onChunkUnloaded() {
+        shaft.onChunkUnloaded();
+        super.onChunkUnloaded();
+    }
+
+    @Override
+    public void setRemoved() {
+        shaft.setRemoved();
+        super.setRemoved();
+    }
+
+    @Override
+    public void clearRemoved() {
+        super.clearRemoved();
+        shaft.clearRemoved();
+    }
+
+    @Override
+    protected void onUpdateClient() {
+        super.onUpdateClient();
+        shaft.tick();
+    }
+
+    @Override
+    public CompoundTag getReducedUpdateTag(HolderLookup.Provider provider) {
+        CompoundTag tag = super.getReducedUpdateTag(provider);
+        shaft.saveToMachine(tag, provider, true);
+        return tag;
+    }
+
+    @Override
+    public void handleUpdateTag(CompoundTag tag, HolderLookup.Provider provider) {
+        super.handleUpdateTag(tag, provider);
+        shaft.loadFromMachine(tag, provider, true);
+    }
+
+    @Override
     public void saveAdditional(CompoundTag tag, HolderLookup.Provider provider) {
         super.saveAdditional(tag, provider);
         tag.putInt("Progress", progress);
         tag.putInt("Duration", duration);
         RecipeRoundRobinNbt.write(tag, roundRobinState);
+        shaft.saveToMachine(tag, provider, false);
     }
 
     @Override
     public void loadAdditional(CompoundTag tag, HolderLookup.Provider provider) {
         super.loadAdditional(tag, provider);
         RecipeRoundRobinNbt.read(tag, roundRobinState);
+        shaft.loadFromMachine(tag, provider, false);
         // Active plans are deliberately ephemeral. Re-resolve after a reload so a
         // datapack recipe change can never finish an old operation.
         progress = 0;
@@ -1186,6 +1142,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         private ExecutionPlan completionPlan;
         private boolean repeatEligible;
         private int progress;
+        private double rotationCarry;
         private int duration = DEFAULT_DURATION;
         private long energyPerTick = BASE_ENERGY_USAGE;
         private LaneStatus status = LaneStatus.IDLE;
@@ -1194,6 +1151,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             this.plan = plan;
             this.completionPlan = null;
             this.progress = 0;
+            this.rotationCarry = 0;
             this.duration = duration;
             this.energyPerTick = energyPerTick;
             this.status = LaneStatus.RUNNING;
@@ -1215,6 +1173,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             plan = null;
             completionPlan = null;
             progress = 0;
+            rotationCarry = 0;
             duration = DEFAULT_DURATION;
             energyPerTick = BASE_ENERGY_USAGE;
             status = LaneStatus.IDLE;
