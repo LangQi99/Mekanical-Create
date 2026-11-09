@@ -23,7 +23,6 @@ public final class ClientRecipeCatalogLifecycle {
     private static final RecipeCatalogReloadState RELOAD = new RecipeCatalogReloadState();
     private static RecipeManager observedManager;
     private static long lastStatus;
-    private static boolean showedLoading;
 
     private ClientRecipeCatalogLifecycle() {
     }
@@ -51,7 +50,6 @@ public final class ClientRecipeCatalogLifecycle {
             observedManager = manager;
             if (level == null) {
                 RELOAD.reset();
-                showedLoading = false;
                 lastStatus = 0;
             } else {
                 // Preserve tags that arrived before the client level was installed.
@@ -81,17 +79,12 @@ public final class ClientRecipeCatalogLifecycle {
         if (SimulationDisplayRecipeCatalog.failed(level) || MekanicalCreateJeiPlugin.publicationFailed()) {
             minecraft.gui.setOverlayMessage(Component.translatable("jei.mekanicalcreate.loading_failed"), false);
         } else if (RELOAD.isWaiting() || SimulationDisplayRecipeCatalog.peek(level) == null) {
-            showedLoading = true;
             minecraft.gui.setOverlayMessage(Component.translatable("jei.mekanicalcreate.preparing",
                     SimulationDisplayRecipeCatalog.producedCount(level)), false);
         } else if (!MekanicalCreateJeiPlugin.registrationComplete()) {
-            showedLoading = true;
             minecraft.gui.setOverlayMessage(Component.translatable("jei.mekanicalcreate.registering",
                     MekanicalCreateJeiPlugin.registeredCount(),
                     MekanicalCreateJeiPlugin.totalCount()), false);
-        } else if (showedLoading) {
-            showedLoading = false;
-            minecraft.gui.setOverlayMessage(Component.translatable("jei.mekanicalcreate.ready"), false);
         }
     }
 }

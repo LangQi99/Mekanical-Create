@@ -77,7 +77,6 @@
   "jei.mekanicalcreate.process.native_item_charging": "Item Charging",
   "jei.mekanicalcreate.preparing": "Preparing factory recipes (%s)",
   "jei.mekanicalcreate.registering": "Loading factory recipes: %s / %s",
-  "jei.mekanicalcreate.ready": "Factory recipes are ready",
   "jei.mekanicalcreate.loading_failed": "Factory recipes could not be prepared; see the game log",
   "block.mekanicalcreate.mekanical_factory_stress_port": "Mekanical Stress Interface",
   "gui.mekanicalcreate.shaft.no_rotation": "Requires rotation (%s SU)",
