@@ -63,12 +63,12 @@ public final class DirectShaftGameTests {
                     KineticBlockEntity downstream = helper.getBlockEntity(downstreamPos);
                     SimulationChamberBlockEntity machine = helper.getBlockEntity(machinePos);
                     helper.assertTrue(downstream.getTheoreticalSpeed() == 0, "Turning the chamber left the old shaft powered");
-                    helper.assertTrue(machine.isStressStarved(), "The old shaft axis still powered the chamber");
+                    helper.assertTrue(machine.shaft().getSpeed() == 0, "The old shaft axis still powered the chamber");
                     helper.setBlock(machinePos.south(), motorFacing(Direction.NORTH));
                 })
                 .thenWaitUntil(() -> {
                     SimulationChamberBlockEntity machine = helper.getBlockEntity(machinePos);
-                    helper.assertTrue(machine.shaft().canRun() && !machine.isStressStarved(),
+                    helper.assertTrue(machine.shaft().getSpeed() != 0,
                             "The chamber did not pick up the new shaft axis");
                 })
                 .thenSucceed();
@@ -110,8 +110,8 @@ public final class DirectShaftGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty", timeoutTicks = 55)
-    public static void queuedMachinesOverloadAndReleaseRealNetworkStress(GameTestHelper helper) {
+    @GameTest(template = "empty", timeoutTicks = 80)
+    public static void idleShaftsChargeAndStopGeneratingWhenOverloaded(GameTestHelper helper) {
         BlockPos motorPos = new BlockPos(0, 1, 0);
         BlockPos firstPos = motorPos.east();
         BlockPos secondPos = firstPos.east();
@@ -122,35 +122,38 @@ public final class DirectShaftGameTests {
         helper.setBlock(secondPos, machineState);
         SimulationChamberBlockEntity first = helper.getBlockEntity(firstPos);
         SimulationChamberBlockEntity second = helper.getBlockEntity(secondPos);
-        prepareMilling(first);
-        prepareMilling(second);
 
         helper.startSequence()
                 .thenWaitUntil(() -> {
                     CreativeMotorBlockEntity motor = helper.getBlockEntity(motorPos);
-                    helper.assertTrue(motor.getTheoreticalSpeed() == 16 && motor.hasNetwork(),
-                            "The motor did not start its network");
+                    helper.assertTrue(motor.getSpeed() == 16 && motor.hasNetwork(), "The motor did not start");
+                    helper.assertTrue(first.getEnergyContainer().getEnergy() >= 22
+                                    && second.getEnergyContainer().getEnergy() >= 22,
+                            "Idle machines should charge without any recipe or FE cable");
+                    helper.assertTrue(motor.getOrCreateNetwork().calculateStress() == 2048,
+                            "Two alternator loads at 16 RPM should take 2048 SU");
                 })
                 .thenExecute(() -> {
                     CreativeMotorBlockEntity motor = helper.getBlockEntity(motorPos);
-                    // Supply 256 SU at 16 RPM so exactly one chamber fits in the budget.
-                    motor.getOrCreateNetwork().updateCapacityFor(motor, 16);
+                    motor.getOrCreateNetwork().updateCapacityFor(motor, 64);
+                    first.getEnergyContainer().setEnergy(0);
+                    second.getEnergyContainer().setEnergy(0);
+                })
+                .thenIdle(5)
+                .thenExecute(() -> {
+                    CreativeMotorBlockEntity motor = helper.getBlockEntity(motorPos);
+                    helper.assertTrue(motor.isOverStressed() && first.getEnergyContainer().getEnergy() == 0
+                                    && second.getEnergyContainer().getEnergy() == 0,
+                            "An overloaded shaft must not charge either machine");
+                    helper.setBlock(secondPos, Blocks.AIR);
                 })
                 .thenWaitUntil(() -> {
                     CreativeMotorBlockEntity motor = helper.getBlockEntity(motorPos);
-                    helper.assertTrue(motor.isOverStressed() && first.isStressStarved() && second.isStressStarved(),
-                            "Both machine demands must reach the motor's Create network");
-                    helper.assertTrue(motor.getOrCreateNetwork().calculateStress() == 512,
-                            "Two 256 SU machines should cost 512 SU at the motor's speed");
-                })
-                .thenExecute(() -> second.getInputSlots().getFirst().setStack(ItemStack.EMPTY))
-                .thenWaitUntil(() -> {
-                    CreativeMotorBlockEntity motor = helper.getBlockEntity(motorPos);
-                    helper.assertTrue(!motor.isOverStressed() && motor.getSpeed() != 0,
-                            "The network did not recover when the second chamber went idle");
-                    helper.assertTrue(motor.getOrCreateNetwork().calculateStress() == 256,
-                            "An idle machine should release its entire demand");
-                    helper.assertTrue(first.getScaledProgress() > 0, "The remaining chamber did not resume");
+                    long energy = first.getEnergyContainer().getEnergy();
+                    helper.assertTrue(motor.getSpeed() == 16 && motor.getOrCreateNetwork().calculateStress() == 1024,
+                            "Removing one alternator should leave 1024 SU of load at 16 RPM");
+                    helper.assertTrue(energy >= 22 && energy % 22 == 0,
+                            "Generation should resume at 22 FE/t once the load fits");
                 })
                 .thenSucceed();
     }
@@ -174,25 +177,28 @@ public final class DirectShaftGameTests {
                 .thenExecute(() -> {
                     controller.getCatalystSlots().getFirst().setStack(AllBlocks.MILLSTONE.asStack());
                     controller.getInputSlots().getFirst().setStack(new ItemStack(Items.WHEAT, 16));
-                    controller.getEnergyContainer().setEnergy(50_000);
                 })
                 .thenIdle(8)
                 .thenExecute(() -> {
                     helper.assertTrue(controller.getScaledProgress() == 0
-                                    && controller.getEnergyContainer().getEnergy() == 50_000,
+                                    && controller.getEnergyContainer().getEnergy() == 0,
                             "An unpowered fluid factory consumed work or energy");
                     helper.setBlock(motorPos, motorFacing(Direction.SOUTH));
                 })
                 .thenWaitUntil(() -> {
                     helper.assertTrue(controller.getScaledProgress() > 0, "Direct shaft did not power the fluid factory");
-                    helper.assertTrue(controller.shaft().getOrCreateNetwork().calculateStress() == 6_912,
-                            "The controller must report all 27 structure blocks' SU to Create");
+                    helper.assertTrue(controller.shaft().getOrCreateNetwork().calculateStress() == 1_024,
+                            "The formed controller should have one alternator load");
                 })
-                .thenExecute(() -> helper.setBlock(motorPos, Blocks.AIR))
+                .thenExecute(() -> {
+                    helper.setBlock(motorPos, Blocks.AIR);
+                    controller.getEnergyContainer().setEnergy(50_000);
+                })
                 .thenIdle(4)
-                .thenExecute(() -> helper.assertTrue(!controller.getMultiblock().isActive()
-                                && controller.shaft().getSpeed() == 0,
-                        "The fluid factory kept working after losing its shaft"))
+                .thenExecute(() -> helper.assertTrue(controller.getMultiblock().isActive()
+                                && controller.shaft().getSpeed() == 0
+                                && controller.getEnergyContainer().getEnergy() < 50_000,
+                        "The fluid factory should continue on stored FE after disconnecting the shaft"))
                 .thenSucceed();
     }
 
@@ -207,6 +213,5 @@ public final class DirectShaftGameTests {
     private static void prepareMilling(SimulationChamberBlockEntity machine) {
         machine.getModuleSlot().setStack(AllBlocks.MILLSTONE.asStack());
         machine.getInputSlots().getFirst().setStack(new ItemStack(Items.WHEAT, 16));
-        machine.getEnergyContainer().setEnergy(50_000);
     }
 }

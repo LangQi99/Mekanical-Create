@@ -79,7 +79,7 @@
   "jei.mekanicalcreate.registering": "Loading factory recipes: %s / %s",
   "jei.mekanicalcreate.loading_failed": "Factory recipes could not be prepared; see the game log",
   "block.mekanicalcreate.mekanical_factory_stress_port": "Mekanical Stress Interface",
-  "gui.mekanicalcreate.shaft.no_rotation": "Requires rotation (%s SU)",
+  "gui.mekanicalcreate.shaft.generation": "Shaft generation: %s FE/t",
   "gui.mekanicalcreate.stress_interface.title": "Mekanical Stress Interface",
   "gui.mekanicalcreate.stress_interface.values": "Stress: %s / %s SU",
   "gui.mekanicalcreate.stress_interface.starved": "Network overloaded",

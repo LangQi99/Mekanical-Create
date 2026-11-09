@@ -1,6 +1,5 @@
 package io.github.langqi99.mekanicalcreate.content;
 
-import io.github.langqi99.mekanicalcreate.MekanicalConfig;
 import io.github.langqi99.mekanicalcreate.content.SimulationRecipeResolver.ExecutionPlan;
 import io.github.langqi99.mekanicalcreate.registry.ModBlocks;
 import java.util.ArrayList;
@@ -236,22 +235,11 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
         fluidContainerSlot.handleContainer(fluidContainerOutputSlot);
 
         MachineShaft shaft = controllerShaft(level);
-        if (!prepareWork(level)) {
-            if (shaft != null) {
-                shaft.setDemand(0);
-            }
-            return setIdle(needsPacket);
-        }
-
         if (shaft != null) {
-            shaft.setDemand(requiredStressSu());
+            shaft.charge(energyContainer);
         }
-        if (MekanicalConfig.stressRequirementEnabled() && (shaft == null || !shaft.canRun())) {
-            boolean changed = active || energyStarved || parallelProgressPulse;
-            active = false;
-            energyStarved = false;
-            parallelProgressPulse = false;
-            return needsPacket || changed;
+        if (!prepareWork(level)) {
+            return setIdle(needsPacket);
         }
         return tickWorkBudgetPlan(level, needsPacket);
     }
@@ -574,24 +562,6 @@ public final class MekanicalFactoryMultiblockData extends MultiblockData {
                 ? BASE_ENERGY_PER_TICK
                 : activePlan.energyPerTick();
         return FactorySpeedSchedule.scaledEnergyPerTick(base, getSpeedCoreCount());
-    }
-
-    /**
-     * Stress the formed structure needs. Every block of the cuboid pays the
-     * same rate; speed cores multiply both throughput and stress, while energy
-     * cores only add buffer capacity (mirroring their effect on FE/t).
-     */
-    public long requiredStressSu() {
-        if (!MekanicalConfig.stressRequirementEnabled()) {
-            return 0;
-        }
-        var bounds = getBounds();
-        if (bounds == null || !isFormed()) {
-            return 0;
-        }
-        int volume = bounds.length() * bounds.width() * bounds.height();
-        return StressDemand.withSpeedCores(StressDemand.fluidFactorySu(volume),
-                getSpeedCoreCount());
     }
 
     void setControllerPos(BlockPos controllerPos) {

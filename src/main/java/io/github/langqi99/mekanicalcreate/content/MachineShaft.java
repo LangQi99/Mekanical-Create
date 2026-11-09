@@ -4,6 +4,9 @@ import com.simibubi.create.content.kinetics.KineticNetwork;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import com.simibubi.create.foundation.utility.CreateLang;
 import io.github.langqi99.mekanicalcreate.MekanicalConfig;
+import mekanism.api.Action;
+import mekanism.api.AutomationType;
+import mekanism.api.energy.IEnergyContainer;
 import mekanism.common.tile.base.TileEntityMekanism;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.HolderLookup;
@@ -13,13 +16,17 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.List;
+import org.jetbrains.annotations.Nullable;
 
 /** A Create network member at the machine's position. The level stores and saves the Mekanism tile. */
 public final class MachineShaft extends KineticBlockEntity {
     private static final String SHAFT_TAG = "MekanicalShaft";
-    private static final String DEMAND_TAG = "Demand";
+    private static final String GENERATOR_TAG = "GeneratorEnabled";
+    // Create Crafts & Additions 1.21.1 defaults: 16,384 SU and 480 FE/t at 256 RPM, with 75% efficiency.
+    private static final float GENERATOR_IMPACT = 64;
+    private static final double FE_PER_RPM = 360.0 / 256;
     private final TileEntityMekanism machine;
-    private long demand;
+    private boolean generatorEnabled;
     private boolean changingConnections;
 
     public MachineShaft(TileEntityMekanism machine) {
@@ -70,63 +77,42 @@ public final class MachineShaft extends KineticBlockEntity {
 
     @Override
     public float calculateStressApplied() {
-        // Create stores impact per RPM. The machine's recipe demand is expressed in total SU.
-        float rpm = Math.abs(getTheoreticalSpeed());
-        lastStressApplied = rpm == 0 ? 0 : demand / rpm;
+        lastStressApplied = generatorEnabled ? GENERATOR_IMPACT : 0;
         return lastStressApplied;
     }
 
-    @Override
-    public void setSpeed(float speed) {
-        float oldSpeed = getTheoreticalSpeed();
-        super.setSpeed(speed);
-        if (level != null && !level.isClientSide && hasNetwork() && Math.abs(speed) != Math.abs(oldSpeed)) {
-            // Source propagation may be in progress. Let Create sync the network after it finishes.
-            getOrCreateNetwork().members.replace(this, calculateStressApplied());
-            networkDirty = true;
+    void charge(@Nullable IEnergyContainer storage) {
+        boolean enabled = storage != null && MekanicalConfig.shaftGenerationEnabled();
+        if (generatorEnabled != enabled) {
+            generatorEnabled = enabled;
+            if (hasNetwork()) {
+                KineticNetwork network = getOrCreateNetwork();
+                if (network.members.containsKey(this)) {
+                    network.updateStressFor(this, calculateStressApplied());
+                }
+            }
+            notifyUpdate();
         }
-    }
-
-    public void setDemand(long demand) {
-        if (this.demand == demand) {
-            return;
-        }
-        this.demand = demand;
-        if (hasNetwork()) {
-            KineticNetwork network = getOrCreateNetwork();
-            if (network.members.containsKey(this)) {
-                network.updateStressFor(this, calculateStressApplied());
+        if (enabled && storage != null) {
+            long generated = generationRate();
+            if (generated > 0) {
+                storage.insert(generated, Action.EXECUTE, AutomationType.INTERNAL);
             }
         }
-        notifyUpdate();
     }
 
-    public boolean canRun() {
-        return !MekanicalConfig.stressRequirementEnabled() || hasNetwork() && getSpeed() != 0;
-    }
-
-    public long supplySu() {
-        return hasNetwork() ? (long) capacity : 0L;
-    }
-
-    public double workRate() {
-        if (!MekanicalConfig.stressRequirementEnabled()) {
-            return 1.0;
-        }
-        double rate = StressDemand.speedFactor(getSpeed());
-        return stress > 0 && capacity >= stress * 1.5D ? rate * 2.0 : rate;
+    private long generationRate() {
+        return generatorEnabled ? (long) (Math.abs((int) getSpeed()) * FE_PER_RPM) : 0;
     }
 
     @Override
-    public boolean addToTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
-        if (super.addToTooltip(tooltip, isPlayerSneaking)) {
-            return true;
+    public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
+        boolean added = super.addToGoggleTooltip(tooltip, isPlayerSneaking);
+        if (!generatorEnabled) {
+            return added;
         }
-        if (demand <= 0 || getTheoreticalSpeed() != 0) {
-            return false;
-        }
-        CreateLang.builder().add(Component.translatable("gui.mekanicalcreate.shaft.no_rotation", demand))
-                .style(ChatFormatting.GOLD).forGoggles(tooltip);
+        CreateLang.builder().add(Component.translatable("gui.mekanicalcreate.shaft.generation", generationRate()))
+                .style(ChatFormatting.AQUA).forGoggles(tooltip);
         return true;
     }
 
@@ -145,12 +131,12 @@ public final class MachineShaft extends KineticBlockEntity {
     @Override
     protected void write(CompoundTag tag, HolderLookup.Provider provider, boolean clientPacket) {
         super.write(tag, provider, clientPacket);
-        tag.putLong(DEMAND_TAG, demand);
+        tag.putBoolean(GENERATOR_TAG, generatorEnabled);
     }
 
     @Override
     protected void read(CompoundTag tag, HolderLookup.Provider provider, boolean clientPacket) {
-        demand = tag.getLong(DEMAND_TAG);
+        generatorEnabled = tag.getBoolean(GENERATOR_TAG);
         super.read(tag, provider, clientPacket);
     }
 }

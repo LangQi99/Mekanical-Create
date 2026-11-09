@@ -147,7 +147,7 @@ public final class MekanicalFactoryControllerBlockEntity extends MekanicalFactor
         shaft.tick();
         boolean needsPacket = super.onUpdateServer();
         if (!getMultiblock().isFormed()) {
-            shaft.setDemand(0);
+            shaft.charge(null);
         }
         return needsPacket;
     }

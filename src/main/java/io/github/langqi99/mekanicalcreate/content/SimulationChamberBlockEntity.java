@@ -1,7 +1,6 @@
 package io.github.langqi99.mekanicalcreate.content;
 
 import com.simibubi.create.AllBlocks;
-import io.github.langqi99.mekanicalcreate.MekanicalConfig;
 import io.github.langqi99.mekanicalcreate.content.SimulationRecipeResolver.ExecutionPlan;
 import io.github.langqi99.mekanicalcreate.registry.ModBlocks;
 import java.util.ArrayList;
@@ -93,9 +92,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
     private int activeLaneCount;
     private int runningLaneCount;
     private boolean energyStarved;
-    private boolean stressStarved;
-    private long syncedStressSupply;
-    private long syncedStressDemand;
     private boolean planDirty = true;
     private boolean schedulingNeeded = true;
     private long observedRecipeEpoch = SimulationRecipeResolver.cacheEpoch();
@@ -291,16 +287,15 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         boolean sendUpdatePacket = super.onUpdateServer();
         shaft.tick();
         energySlot.fillContainerOrConvert();
+        shaft.charge(energyContainer);
         if (supportsFluids()) {
             fluidContainerSlot.handleContainer(fluidContainerOutputSlot);
         }
 
         Level level = getLevel();
         if (level == null || !canFunction()) {
-            shaft.setDemand(0);
             runningLaneCount = 0;
             energyStarved = false;
-            stressStarved = false;
             setActive(false);
             return sendUpdatePacket;
         }
@@ -343,16 +338,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             }
         }
 
-        syncedStressDemand = requiredStressSu();
-        boolean hasWork = lanes.stream().anyMatch(lane -> lane.plan != null);
-        shaft.setDemand(hasWork ? syncedStressDemand : 0);
-        syncedStressSupply = shaft.supplySu();
-        boolean didWork = hasWork && processLanes();
-        if (!hasWork) {
-            stressStarved = false;
-            energyStarved = false;
-            resetEnergyUsage();
-        }
+        boolean didWork = processLanes();
         updateClientLaneState();
         setActive(didWork);
         if (didWork || activeLaneCount > 0 || waitedForLookup) {
@@ -477,22 +463,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         if (level == null) {
             return false;
         }
-        // Create stress gate. While the network is missing, not turning, or
-        // overstressed, lanes freeze with their progress intact: no inputs are
-        // consumed and no energy is drawn.
-        if (!shaft.canRun()) {
-            for (LaneState lane : lanes) {
-                if (lane.plan != null) {
-                    lane.status = LaneStatus.STRESS_STARVED;
-                }
-            }
-            energyContainer.setEnergyPerTick(adjustedIdleEnergyUsage());
-            stressStarved = true;
-            energyStarved = false;
-            return false;
-        }
-        stressStarved = false;
-        double workRate = shaft.workRate();
         OutputReservation outputReservation = new OutputReservation();
         List<LaneState> runnable = new ArrayList<>(lanes.size());
         long requestedEnergy = 0;
@@ -508,7 +478,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             // let one expensive lane prevent a later, cheaper independent lane
             // from using energy that is actually available.
             boolean hasEnergy = lane.energyPerTick <= availableEnergy;
-            boolean finishing = lane.progress + (int) (lane.rotationCarry + workRate) >= lane.duration;
+            boolean finishing = lane.progress + 1 >= lane.duration;
             ExecutionPlan executionPlan = lane.completionPlan != null
                     ? lane.completionPlan : lane.plan;
             if (hasEnergy && FanProcessingPolicy.shouldSnapshotAtCompletion(
@@ -561,10 +531,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
                 continue;
             }
             energyContainer.extract(energy, Action.EXECUTE, AutomationType.INTERNAL);
-            double work = lane.rotationCarry + workRate;
-            int steps = (int) work;
-            lane.rotationCarry = work - steps;
-            lane.progress += steps;
+            lane.progress++;
             didWork = true;
             if (lane.progress < lane.duration) {
                 continue;
@@ -723,7 +690,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         activeLaneCount = 0;
         runningLaneCount = 0;
         energyStarved = false;
-        stressStarved = false;
         resetEnergyUsage();
         if (getLevel() != null) {
             markForSave();
@@ -822,33 +788,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         return energyStarved;
     }
 
-    public boolean isStressStarved() {
-        return stressStarved;
-    }
-
-    /** Stress this machine currently needs, in Create SU. */
-    public long requiredStressSu() {
-        if (!MekanicalConfig.stressRequirementEnabled()) {
-            return 0;
-        }
-        FactoryTier tier = Attribute.getTier(getBlockHolder(), FactoryTier.class);
-        BaseTier baseTier = tier == null ? null : tier.getBaseTier();
-        int speedUpgrades = getComponent().getUpgrades(Upgrade.SPEED);
-        int energyUpgrades = getComponent().getUpgrades(Upgrade.ENERGY);
-        return StressDemand.scaledSu(StressDemand.baseSuForTier(baseTier),
-                speedUpgrades, energyUpgrades);
-    }
-
-    /** Client-side mirror of the reached stress capacity, for the GUI readout. */
-    public long clientStressSupplySu() {
-        return syncedStressSupply;
-    }
-
-    /** Client-side mirror of the machine stress demand, for the GUI readout. */
-    public long clientStressDemandSu() {
-        return syncedStressDemand;
-    }
-
     @Override
     public void addContainerTrackers(MekanismContainer container) {
         super.addContainerTrackers(container);
@@ -857,9 +796,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         container.track(SyncableInt.create(() -> activeLaneCount, value -> activeLaneCount = value));
         container.track(SyncableInt.create(() -> runningLaneCount, value -> runningLaneCount = value));
         container.track(SyncableBoolean.create(() -> energyStarved, value -> energyStarved = value));
-        container.track(SyncableBoolean.create(() -> stressStarved, value -> stressStarved = value));
-        container.track(SyncableLong.create(() -> syncedStressDemand, value -> syncedStressDemand = value));
-        container.track(SyncableLong.create(() -> syncedStressSupply, value -> syncedStressSupply = value));
         container.track(SyncableLong.create(energyContainer::getEnergyPerTick,
                 energyContainer::setEnergyPerTick));
     }
@@ -1129,8 +1065,7 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         IDLE,
         RUNNING,
         OUTPUT_BLOCKED,
-        ENERGY_STARVED,
-        STRESS_STARVED
+        ENERGY_STARVED
     }
 
     private static final class LaneState {
@@ -1142,7 +1077,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
         private ExecutionPlan completionPlan;
         private boolean repeatEligible;
         private int progress;
-        private double rotationCarry;
         private int duration = DEFAULT_DURATION;
         private long energyPerTick = BASE_ENERGY_USAGE;
         private LaneStatus status = LaneStatus.IDLE;
@@ -1151,7 +1085,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             this.plan = plan;
             this.completionPlan = null;
             this.progress = 0;
-            this.rotationCarry = 0;
             this.duration = duration;
             this.energyPerTick = energyPerTick;
             this.status = LaneStatus.RUNNING;
@@ -1173,7 +1106,6 @@ public class SimulationChamberBlockEntity extends TileEntityConfigurableMachine 
             plan = null;
             completionPlan = null;
             progress = 0;
-            rotationCarry = 0;
             duration = DEFAULT_DURATION;
             energyPerTick = BASE_ENERGY_USAGE;
             status = LaneStatus.IDLE;
